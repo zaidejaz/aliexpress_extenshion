@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>AliExpress Scraper</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      width: 320px;
+      padding: 15px;
+    }
+    
+    h1 {
+      font-size: 16px;
+      margin-bottom: 15px;
+      color: #333;
+      text-align: center;
+    }
+    
+    .form-group {
+      margin-bottom: 12px;
+    }
+    
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+      font-size: 12px;
+      color: #555;
+    }
+    
+    input, select {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      box-sizing: border-box;
+    }
+    
+    .row {
+      display: flex;
+      gap: 10px;
+    }
+    
+    .col {
+      flex: 1;
+    }
+    
+    button {
+      width: 100%;
+      padding: 10px;
+      background-color: #FF4747;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
+      margin-top: 10px;
+    }
+    
+    button:hover {
+      background-color: #E60000;
+    }
+    
+    .button-group {
+      display: flex;
+      gap: 10px;
+    }
+    
+    .stats {
+      margin-top: 15px;
+      display: flex;
+      justify-content: space-between;
+      padding: 10px;
+      background-color: #f9f9f9;
+      border-radius: 4px;
+    }
+    
+    .stats div {
+      text-align: center;
+    }
+    
+    .stats span {
+      display: block;
+      font-weight: bold;
+      font-size: 14px;
+      color: #333;
+    }
+    
+    .stats small {
+      font-size: 10px;
+      color: #777;
+    }
+    
+    .auth-status {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 15px;
+      padding: 8px;
+      background-color: #f9f9f9;
+      border-radius: 4px;
+    }
+    
+    .auth-status p {
+      margin: 0;
+      font-size: 12px;
+      color: #555;
+    }
+    
+    #setupAuthBtn {
+      width: auto;
+      padding: 5px 10px;
+      font-size: 12px;
+      margin-top: 0;
+      background-color: #2196F3;
+    }
+    
+    #setupAuthBtn:hover {
+      background-color: #0b7dda;
+    }
+    
+    .help-text {
+      font-size: 10px;
+      color: #777;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+  <h1>AliExpress Scraper</h1>
+  
+  <div class="auth-status">
+    <p>Google Auth Status: <span id="authStatus">Checking...</span></p>
+    <button id="setupAuthBtn">Setup Google Auth</button>
+  </div>
+  
+  <div class="form-group">
+    <label for="sheetId">Google Sheet ID</label>
+    <input type="text" id="sheetId" placeholder="Enter Google Sheet ID">
+    <p class="help-text">Find this in your Google Sheet URL: /spreadsheets/d/<span style="font-weight:bold;">SHEET_ID</span>/edit</p>
+  </div>
+  
+  <div class="form-group">
+    <label for="sheetName">Sheet Name</label>
+    <input type="text" id="sheetName" placeholder="Enter Sheet Name (e.g., Sheet1)">
+  </div>
+  
+  <div class="form-group">
+    <label for="functionType">Function Type</label>
+    <select id="functionType">
+      <option value="Scrape">Scrape</option>
+      <option value="URLs">URLs</option>
+      <option value="Part data">Part data</option>
+    </select>
+  </div>
+  
+  <div class="row" id="rowRangeContainer">
+    <div class="col">
+      <div class="form-group">
+        <label for="startRow">Start Row</label>
+        <input type="number" id="startRow" placeholder="Start" min="1">
+      </div>
+    </div>
+    <div class="col">
+      <div class="form-group">
+        <label for="endRow">End Row</label>
+        <input type="number" id="endRow" placeholder="End" min="1">
+      </div>
+    </div>
+  </div>
+  
+  <div class="button-group">
+    <button id="setDataBtn">Set Data</button>
+    <button id="stopBtn">Stop</button>
+    <button id="clearDataBtn">Clear Data</button>
+  </div>
+  
+  <div class="stats">
+    <div>
+      <span id="totalUrls">0</span>
+      <small>Total URLs</small>
+    </div>
+    <div>
+      <span id="processedUrls">0</span>
+      <small>Processed</small>
+    </div>
+    <div>
+      <span id="remainingUrls">0</span>
+      <small>Remaining</small>
+    </div>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+{
+  "manifest_version": 3,
+  "name": "AliExpress Product Scraper",
+  "version": "1.0.0",
+  "description": "Scrape product data from AliExpress and export to CSV or Google Sheets",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "clipboardWrite",
+    "identity"
+  ],
+  "host_permissions": [
+    "https://*.aliexpress.com/*",
+    "https://*.aliexpress.us/*",
+    "https://sheets.googleapis.com/*",
+    "https://oauth2.googleapis.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*.aliexpress.com/*", "https://*.aliexpress.us/*"],
+      "js": ["content.js"]
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  
+  "oauth2": {
+    "client_id": "GOOGLE_CLIENT_ID.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/spreadsheets"
+    ],
+    "permissions": [
+    "identity"
+  ]
+  }
+}
