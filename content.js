@@ -1,16 +1,55 @@
 // AliExpress Scraper - Content Script
 
+function waitForProductElements(maxAttempts = 20) {
+  let attempts = 0;
+  
+  function checkAndCreate() {
+    console.log(`Attempt ${attempts + 1} to check for product elements`);
+    
+    // Check if product elements are present
+    const productElements = [
+      document.querySelector('h1[data-pl="product-title"]'),
+      document.querySelector('.product-title-text'),
+      document.querySelector('.price--currentPriceText--V8_y_b5'),
+      document.querySelector('.product-price-value')
+    ];
+    
+    if (productElements.some(el => el !== null)) {
+      console.log("Product elements found, creating button");
+      createScrapeButton();
+      return true;
+    }
+    
+    // Check attempts limit
+    attempts++;
+    if (attempts >= maxAttempts) {
+      console.log("Maximum attempts reached, giving up");
+      return false;
+    }
+    
+    // Try again after a delay
+    console.log("No product elements found yet, trying again in 1 second");
+    setTimeout(checkAndCreate, 1000);
+    return false;
+  }
+  
+  return checkAndCreate();
+}
+
 // Create and inject the Scrape button
 function createScrapeButton() {
-  // Check if we're on a product page
-  if (!window.location.href.includes('/item/')) {
+  console.log("Creating scrape button...");
+  
+  // Check if button already exists
+  if (document.getElementById('aliexpress-scraper-container')) {
+    console.log("Scrape button already exists");
     return;
   }
 
   // Create button container
   const buttonContainer = document.createElement('div');
   buttonContainer.id = 'aliexpress-scraper-container';
-  buttonContainer.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 10000; display: flex; flex-direction: column; gap: 10px;';
+  buttonContainer.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 9999999; display: flex; flex-direction: column; gap: 10px;';
 
   // Create scrape button
   const scrapeButton = document.createElement('button');
@@ -57,19 +96,19 @@ function createScrapeButton() {
     copyButton.style.backgroundColor = '#2196F3';
   });
 
-  // Create send to sheets button (initially hidden)
-  const sheetsButton = document.createElement('button');
-  sheetsButton.id = 'aliexpress-sheets-button';
-  sheetsButton.textContent = 'Send to Sheets';
-  sheetsButton.style.cssText = 'padding: 8px 15px; background-color: #673AB7; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; display: none;';
+  // Create save button (initially hidden)
+  const saveButton = document.createElement('button');
+  saveButton.id = 'aliexpress-save-button';
+  saveButton.textContent = 'Save Product';
+  saveButton.style.cssText = 'padding: 8px 15px; background-color: #673AB7; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; display: none;';
 
   // Button hover effect
-  sheetsButton.addEventListener('mouseover', () => {
-    sheetsButton.style.backgroundColor = '#5E35B1';
+  saveButton.addEventListener('mouseover', () => {
+    saveButton.style.backgroundColor = '#5E35B1';
   });
 
-  sheetsButton.addEventListener('mouseout', () => {
-    sheetsButton.style.backgroundColor = '#673AB7';
+  saveButton.addEventListener('mouseout', () => {
+    saveButton.style.backgroundColor = '#673AB7';
   });
 
   // Create a status div
@@ -103,10 +142,10 @@ function createScrapeButton() {
       scrapeButton.style.backgroundColor = '#4CAF50';
       statusDiv.textContent = 'Product scraped successfully!';
 
-      // Show download, copy, and sheets buttons
+      // Show download, copy, and save buttons
       downloadButton.style.display = 'block';
       copyButton.style.display = 'block';
-      sheetsButton.style.display = 'block';
+      saveButton.style.display = 'block';
 
       // Reset scrape button after 3 seconds
       setTimeout(() => {
@@ -182,50 +221,50 @@ function createScrapeButton() {
     }
   });
 
-  // Add click event to sheets button
-  sheetsButton.addEventListener('click', () => {
+  // Add click event to save button
+  saveButton.addEventListener('click', () => {
     if (!scrapedData) {
-      statusDiv.textContent = 'No data to send to Google Sheets!';
+      statusDiv.textContent = 'No data to save!';
       return;
     }
 
     try {
-      // Get settings from storage
-      chrome.storage.sync.get(['googleSheetId', 'googleSheetName'], (result) => {
-        if (!result.googleSheetId || !result.googleSheetName) {
-          statusDiv.textContent = 'Error: Google Sheet ID or Sheet Name not set. Please set them in the extension popup.';
-          return;
+      // Change button state
+      saveButton.textContent = 'Saving...';
+      saveButton.style.backgroundColor = '#FFA500';
+      saveButton.disabled = true;
+      statusDiv.textContent = 'Saving product data...';
+
+      // Send message to background script
+      chrome.runtime.sendMessage({
+        action: 'scrapeProduct',
+        url: window.location.href,
+        data: scrapedData
+      }, (response) => {
+        if (response && response.success) {
+          statusDiv.textContent = 'Product saved successfully!';
+          saveButton.textContent = 'Saved';
+          saveButton.style.backgroundColor = '#4CAF50';
+          
+          setTimeout(() => {
+            saveButton.textContent = 'Save Product';
+            saveButton.style.backgroundColor = '#673AB7';
+            saveButton.disabled = false;
+          }, 2000);
+        } else {
+          statusDiv.textContent = 'Error saving data: ' + (response ? response.message : 'Unknown error');
+          saveButton.textContent = 'Save Product';
+          saveButton.style.backgroundColor = '#673AB7';
+          saveButton.disabled = false;
         }
-
-        // Change button state
-        sheetsButton.textContent = 'Sending...';
-        sheetsButton.style.backgroundColor = '#FFA500';
-        sheetsButton.disabled = true;
-        statusDiv.textContent = 'Sending data to Google Sheets...';
-
-        // Send message to background script
-        chrome.runtime.sendMessage({
-          action: 'scrapeProduct',
-          url: window.location.href,
-          data: scrapedData
-        }, (response) => {
-          if (response && response.success) {
-            statusDiv.textContent = 'Request sent! Processing in background.';
-          } else {
-            statusDiv.textContent = 'Error sending data: ' + (response ? response.message : 'Unknown error');
-            sheetsButton.textContent = 'Send to Sheets';
-            sheetsButton.style.backgroundColor = '#673AB7';
-            sheetsButton.disabled = false;
-          }
-        });
       });
     } catch (error) {
-      statusDiv.textContent = 'Error sending to Google Sheets: ' + error.message;
-      console.error("Error sending to Google Sheets:", error);
+      statusDiv.textContent = 'Error saving product: ' + error.message;
+      console.error("Error saving product:", error);
       
-      sheetsButton.textContent = 'Send to Sheets';
-      sheetsButton.style.backgroundColor = '#673AB7';
-      sheetsButton.disabled = false;
+      saveButton.textContent = 'Save Product';
+      saveButton.style.backgroundColor = '#673AB7';
+      saveButton.disabled = false;
     }
   });
 
@@ -233,55 +272,118 @@ function createScrapeButton() {
   buttonContainer.appendChild(scrapeButton);
   buttonContainer.appendChild(downloadButton);
   buttonContainer.appendChild(copyButton);
-  buttonContainer.appendChild(sheetsButton);
+  buttonContainer.appendChild(saveButton);
   buttonContainer.appendChild(statusDiv);
 
   // Add container to page
   document.body.appendChild(buttonContainer);
+  console.log("Scrape button created and added to page");
+}
+
+// Improved function to check if we're on a product page
+function isProductPage() {
+  // Check URL patterns
+  const urlPatterns = [
+    /\/item\/\d+\.html/,  // Standard pattern
+    /\/product\/\d+/,      // Alternative pattern
+    /\/i\/\d+/             // Short pattern
+  ];
+  
+  const currentUrl = window.location.href;
+  
+  // Check each pattern
+  for (const pattern of urlPatterns) {
+    if (pattern.test(currentUrl)) {
+      console.log("Detected product page:", currentUrl);
+      return true;
+    }
+  }
+  
+  // Additional checks for product page elements
+  const productElements = [
+    document.querySelector('h1[data-pl="product-title"]'),
+    document.querySelector('.product-title-text'),
+    document.querySelector('.price--currentPriceText--V8_y_b5'),
+    document.querySelector('.product-price-value')
+  ];
+  
+  if (productElements.some(el => el !== null)) {
+    console.log("Detected product page elements");
+    return true;
+  }
+  
+  console.log("Not a product page:", currentUrl);
+  return false;
+}
+
+// Handle navigation events for single-page applications
+function setupNavigationObserver() {
+  let lastUrl = window.location.href;
+  console.log("Setting up navigation observer, initial URL:", lastUrl);
+  
+  // Create a more robust observer
+  const bodyObserver = new MutationObserver(() => {
+    // Check if URL changed
+    if (lastUrl !== window.location.href) {
+      console.log("URL changed from", lastUrl, "to", window.location.href);
+      lastUrl = window.location.href;
+
+      // Remove existing button if it exists
+      const existingContainer = document.getElementById('aliexpress-scraper-container');
+      if (existingContainer) {
+        console.log("Removing existing scrape button");
+        existingContainer.remove();
+      }
+
+      // Add new button if on a product page
+      if (isProductPage()) {
+        console.log("Navigated to product page, creating button");
+        waitForProductElements();
+      }
+    }
+    
+    // Also periodically check for product page without URL change
+    // (handles cases where content loads dynamically)
+    if (isProductPage() && !document.getElementById('aliexpress-scraper-container')) {
+      console.log("Product page detected without URL change, creating button");
+      waitForProductElements();
+    }
+  });
+
+  // Observe changes to the body element
+  bodyObserver.observe(document.body, {
+    childList: true,
+    subtree: true
+  });
+  
+  // Also set a timer as a fallback
+  setTimeout(() => {
+    if (isProductPage() && !document.getElementById('aliexpress-scraper-container')) {
+      console.log("Delayed detection of product page, creating button");
+      waitForProductElements();
+    }
+  }, 2000);
 }
 
 // Listen for messages from popup or background
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === 'updateSettings') {
-    // Settings updated, no action needed here
-    sendResponse({ success: true });
-  } else if (message.action === 'updateStatus') {
-    // Update status display for current tab
-    const statusDiv = document.getElementById('aliexpress-status');
-    const sheetsButton = document.getElementById('aliexpress-sheets-button');
-    
-    if (statusDiv && sheetsButton) {
-      if (message.status === 'DONE') {
-        statusDiv.textContent = 'Data sent to Google Sheets successfully!';
-        sheetsButton.textContent = 'Send to Sheets';
-        sheetsButton.style.backgroundColor = '#673AB7';
-        sheetsButton.disabled = false;
-      } else if (message.status === 'ERROR') {
-        statusDiv.textContent = 'Error sending to Google Sheets: ' + message.error;
-        sheetsButton.textContent = 'Send to Sheets';
-        sheetsButton.style.backgroundColor = '#673AB7';
-        sheetsButton.disabled = false;
-      }
-    }
-    sendResponse({ success: true });
-  } else if (message.action === 'stopScraping') {
-    // Reset UI
-    const statusDiv = document.getElementById('aliexpress-status');
-    const sheetsButton = document.getElementById('aliexpress-sheets-button');
-    
-    if (statusDiv && sheetsButton) {
-      statusDiv.textContent = 'Scraping stopped by user.';
-      sheetsButton.textContent = 'Send to Sheets';
-      sheetsButton.style.backgroundColor = '#673AB7';
-      sheetsButton.disabled = false;
-    }
-    sendResponse({ success: true });
-  } else if (message.action === 'clearData') {
-    // Reset UI
+  if (message.action === 'clearData') {
+    // Reset UI if any
     const statusDiv = document.getElementById('aliexpress-status');
     if (statusDiv) {
-      statusDiv.textContent = 'Data cleared.';
+      statusDiv.textContent = 'All saved data cleared.';
     }
+    sendResponse({ success: true });
+  } else if (message.action === 'updateStats') {
+    // Update any UI elements that display stats
+    const statusDiv = document.getElementById('aliexpress-status');
+    if (statusDiv && statusDiv.style.display === 'block') {
+      statusDiv.textContent = `Saved products: ${message.stats.total}`;
+    }
+    sendResponse({ success: true });
+  } else if (message.action === 'forceCreateButton') {
+    // Force create the button on demand
+    waitForProductElements();
     sendResponse({ success: true });
   }
   
@@ -293,10 +395,8 @@ function scrapeProductData() {
   // Check for product issues
   const pageContent = document.body.textContent;
   if (pageContent.includes("This product can't be shipped to your address") ||
-    pageContent.includes("Select another product or address") ||
     pageContent.includes("Sorry, this item is no longer available") ||
-    pageContent.includes("Item unavailable") ||
-    pageContent.includes("Sorry, the page you requested can not be found")) {
+    pageContent.includes("Item unavailable")) {
     throw new Error("Product unavailable or cannot be shipped");
   }
 
@@ -571,6 +671,198 @@ function scrapeProductData() {
   return data;
 }
 
+// Extract store information
+function extractStoreInfo() {
+  const storeInfo = {
+    storeName: '',
+    storeNo: '',
+    openSince: ''
+  };
+  
+  try {
+    // Direct approach targeting the specific table rows
+    const storeInfoTable = document.querySelector('.store-detail--storeInfo--BMDFsTB table');
+    if (storeInfoTable) {
+      const rows = storeInfoTable.querySelectorAll('tr');
+      console.log(rows);
+      rows.forEach(row => {
+        const cells = row.querySelectorAll('td');
+        if (cells.length >= 2) {
+          const label = cells[0].textContent.trim();
+          const value = cells[1].textContent.trim();
+          
+          if (label.includes('Name:')) {
+            storeInfo.storeName = value;
+            console.log("Found store name:", value);
+          } else if (label.includes('Store no.:')) {
+            storeInfo.storeNo = value;
+            console.log("Found store number:", value);
+          } else if (label.includes('Open since:')) {
+            storeInfo.openSince = value;
+            console.log("Found open since:", value);
+          }
+        }
+      });
+    }
+    
+    // If store info is still missing, try alternative methods
+    if (!storeInfo.storeName) {
+      const storeNameElement = document.querySelector('.shop-name, .store-name, [data-pl="store-name"]');
+      if (storeNameElement) {
+        storeInfo.storeName = storeNameElement.textContent.trim();
+      }
+    }
+    
+    if (!storeInfo.storeNo) {
+      // Look for store number in links
+      const storeLinks = document.querySelectorAll('a[href*="store"]');
+      for (const link of storeLinks) {
+        const href = link.getAttribute('href');
+        const storeMatch = href.match(/store\/(\d+)/);
+        if (storeMatch && storeMatch[1]) {
+          storeInfo.storeNo = storeMatch[1];
+          break;
+        }
+      }
+    }
+    
+    // If we still don't have the open since date, search more broadly
+    if (!storeInfo.openSince) {
+      // Use XPath to find elements containing text
+      const openSinceTds = document.evaluate('//td[contains(text(), "Open since:")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+      for (let i = 0; i < openSinceTds.snapshotLength; i++) {
+        const td = openSinceTds.snapshotItem(i);
+        if (td.nextElementSibling) {
+          storeInfo.openSince = td.nextElementSibling.textContent.trim();
+          console.log("Found open since via XPath:", storeInfo.openSince);
+          break;
+        }
+      }
+    }
+    
+    // Last resort: look for text pattern in all text nodes
+    if (!storeInfo.openSince) {
+      const textWalker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      let textNode;
+      while (textNode = textWalker.nextNode()) {
+        if (textNode.textContent.includes('Open since:')) {
+          // Try to find the date in the parent or sibling elements
+          const parentEl = textNode.parentElement;
+          
+          // Check if the next sibling has the date
+          if (parentEl.nextElementSibling) {
+            storeInfo.openSince = parentEl.nextElementSibling.textContent.trim();
+            console.log("Found open since from next sibling:", storeInfo.openSince);
+            break;
+          }
+          
+          // Otherwise, check if it's in the same element after the text
+          const text = parentEl.textContent;
+          const match = text.match(/Open since:\s*([A-Za-z0-9,\s]+)/i);
+          if (match && match[1]) {
+            storeInfo.openSince = match[1].trim();
+            console.log("Found open since from text pattern:", storeInfo.openSince);
+            break;
+          }
+        }
+      }
+    }
+    
+    return storeInfo;
+  } catch (error) {
+    console.error("Error extracting store info:", error);
+    return storeInfo;
+  }
+}
+
+// Function to extract shipping cost (continued)
+function extractShippingCost() {
+  let shippingCost = '0'; // Default to free shipping
+
+  try {
+    // Direct approach for the dynamic shipping structure
+    const dynamicShippingLines = document.querySelectorAll('.dynamic-shipping-line');
+    for (const line of dynamicShippingLines) {
+      const text = line.textContent.trim();
+      if (text.includes('Shipping:')) {
+        // Look for price with currency symbol
+        const match = text.match(/Shipping:\s*(\$|PKR|US\s*\$|€)?\s*([\d,.]+)/i);
+        if (match && match[2]) {
+          shippingCost = match[2].replace(/,/g, '');
+          console.log("Found shipping cost in dynamic shipping:", shippingCost);
+          return shippingCost;
+        }
+      }
+    }
+
+    // Look specifically for the strong tag with shipping info
+    const shippingStrongs = document.querySelectorAll('.dynamic-shipping strong');
+    for (const strong of shippingStrongs) {
+      const text = strong.textContent.trim();
+      if (text.includes('Shipping:') || text.match(/\$\d+/)) {
+        const match = text.match(/(\$|PKR|US\s*\$|€)?\s*([\d,.]+)/);
+        if (match && match[2]) {
+          shippingCost = match[2].replace(/,/g, '');
+          console.log("Found shipping cost in strong tag:", shippingCost);
+          return shippingCost;
+        }
+      }
+    }
+
+    // Try the shipping div itself
+    const shippingContent = document.querySelector('.shipping--content--ulA3urO');
+    if (shippingContent) {
+      const text = shippingContent.textContent.trim();
+      if (text.includes('Shipping:')) {
+        const match = text.match(/Shipping:\s*(\$|PKR|US\s*\$|€)?\s*([\d,.]+)/i);
+        if (match && match[2]) {
+          shippingCost = match[2].replace(/,/g, '');
+          console.log("Found shipping cost in shipping content:", shippingCost);
+          return shippingCost;
+        }
+      }
+    }
+
+    // Check for free shipping
+    const freeShippingTexts = ['Free Shipping', 'Free shipping', 'free shipping'];
+    for (const text of freeShippingTexts) {
+      if (document.body.textContent.includes(text)) {
+        console.log("Found free shipping text");
+        return '0';
+      }
+    }
+
+    // Try other shipping elements
+    const shippingElements = [
+      document.querySelector('.shipping--deliveryInfoRow--3fmGP'),
+      document.querySelector('.product-shipping-price'),
+      document.querySelector('.shipping-link'),
+      document.querySelector('[data-pl="shipping-info"]'),
+      document.querySelector('[data-spm-anchor-id*="shipping"]')
+    ].filter(Boolean);
+
+    for (const el of shippingElements) {
+      const text = el.textContent.trim();
+
+      if (text.toLowerCase().includes('free')) {
+        return '0';
+      }
+
+      const match = text.match(/(\$|PKR|US\s*\$|€)?\s*([\d,.]+)/);
+      if (match && match[2]) {
+        shippingCost = match[2].replace(/,/g, '');
+        console.log("Found shipping cost in general shipping element:", shippingCost);
+        return shippingCost;
+      }
+    }
+
+    return shippingCost;
+  } catch (error) {
+    console.error("Error extracting shipping cost:", error);
+    return shippingCost;
+  }
+}
+
 // Function to extract all product photos (improved version)
 function extractAllImages() {
   const allImages = [];
@@ -804,195 +1096,34 @@ function extractAllVariations(variantImagesMap) {
   return variations;
 }
 
-function extractStoreInfo() {
-  const storeInfo = {
-    storeName: '',
-    storeNo: '',
-    openSince: ''
-  };
-  
-  try {
-    // Direct approach targeting the specific table rows
-    const storeInfoTable = document.querySelector('.store-detail--storeInfo--BMDFsTB table');
-    if (storeInfoTable) {
-      const rows = storeInfoTable.querySelectorAll('tr');
-      console.log(rows);
-      rows.forEach(row => {
-        const cells = row.querySelectorAll('td');
-        if (cells.length >= 2) {
-          const label = cells[0].textContent.trim();
-          const value = cells[1].textContent.trim();
-          
-          if (label.includes('Name:')) {
-            storeInfo.storeName = value;
-            console.log("Found store name:", value);
-          } else if (label.includes('Store no.:')) {
-            storeInfo.storeNo = value;
-            console.log("Found store number:", value);
-          } else if (label.includes('Open since:')) {
-            storeInfo.openSince = value;
-            console.log("Found open since:", value);
-          }
-        }
-      });
-    }
-    
-    // If store info is still missing, try alternative methods
-    if (!storeInfo.storeName) {
-      const storeNameElement = document.querySelector('.shop-name, .store-name, [data-pl="store-name"]');
-      if (storeNameElement) {
-        storeInfo.storeName = storeNameElement.textContent.trim();
-      }
-    }
-    
-    if (!storeInfo.storeNo) {
-      // Look for store number in links
-      const storeLinks = document.querySelectorAll('a[href*="store"]');
-      for (const link of storeLinks) {
-        const href = link.getAttribute('href');
-        const storeMatch = href.match(/store\/(\d+)/);
-        if (storeMatch && storeMatch[1]) {
-          storeInfo.storeNo = storeMatch[1];
-          break;
-        }
-      }
-    }
-    
-    // If we still don't have the open since date, search more broadly
-    if (!storeInfo.openSince) {
-      // Use XPath to find elements containing text
-      const openSinceTds = document.evaluate('//td[contains(text(), "Open since:")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-      for (let i = 0; i < openSinceTds.snapshotLength; i++) {
-        const td = openSinceTds.snapshotItem(i);
-        if (td.nextElementSibling) {
-          storeInfo.openSince = td.nextElementSibling.textContent.trim();
-          console.log("Found open since via XPath:", storeInfo.openSince);
-          break;
-        }
-      }
-    }
-    
-    // Last resort: look for text pattern in all text nodes
-    if (!storeInfo.openSince) {
-      const textWalker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-      let textNode;
-      while (textNode = textWalker.nextNode()) {
-        if (textNode.textContent.includes('Open since:')) {
-          // Try to find the date in the parent or sibling elements
-          const parentEl = textNode.parentElement;
-          
-          // Check if the next sibling has the date
-          if (parentEl.nextElementSibling) {
-            storeInfo.openSince = parentEl.nextElementSibling.textContent.trim();
-            console.log("Found open since from next sibling:", storeInfo.openSince);
-            break;
-          }
-          
-          // Otherwise, check if it's in the same element after the text
-          const text = parentEl.textContent;
-          const match = text.match(/Open since:\s*([A-Za-z0-9,\s]+)/i);
-          if (match && match[1]) {
-            storeInfo.openSince = match[1].trim();
-            console.log("Found open since from text pattern:", storeInfo.openSince);
-            break;
-          }
-        }
-      }
-    }
-    
-    return storeInfo;
-  } catch (error) {
-    console.error("Error extracting store info:", error);
-    return storeInfo;
+// Function to generate all possible combinations of variations
+function generateAllCombinations(variationGroups) {
+  if (!variationGroups || variationGroups.length === 0) {
+    return [];
   }
-}
 
-// Function to extract shipping cost
-function extractShippingCost() {
-  let shippingCost = '0'; // Default to free shipping
+  // Start with the first group's options
+  let result = variationGroups[0].options.map(option => [option]);
 
-  try {
-    // Direct approach for the dynamic shipping structure
-    const dynamicShippingLines = document.querySelectorAll('.dynamic-shipping-line');
-    for (const line of dynamicShippingLines) {
-      const text = line.textContent.trim();
-      if (text.includes('Shipping:')) {
-        // Look for price with currency symbol
-        const match = text.match(/Shipping:\s*(\$|PKR|US\s*\$|€)?\s*([\d,.]+)/i);
-        if (match && match[2]) {
-          shippingCost = match[2].replace(/,/g, '');
-          console.log("Found shipping cost in dynamic shipping:", shippingCost);
-          return shippingCost;
-        }
+  // For each additional group, combine with existing results
+  for (let i = 1; i < variationGroups.length; i++) {
+    const currentGroup = variationGroups[i];
+    const newResult = [];
+
+    // For each existing combination
+    for (let j = 0; j < result.length; j++) {
+      const existingCombo = result[j];
+
+      // Add each option from current group to create new combinations
+      for (let k = 0; k < currentGroup.options.length; k++) {
+        newResult.push([...existingCombo, currentGroup.options[k]]);
       }
     }
 
-    // Look specifically for the strong tag with shipping info
-    const shippingStrongs = document.querySelectorAll('.dynamic-shipping strong');
-    for (const strong of shippingStrongs) {
-      const text = strong.textContent.trim();
-      if (text.includes('Shipping:') || text.match(/\$\d+/)) {
-        const match = text.match(/(\$|PKR|US\s*\$|€)?\s*([\d,.]+)/);
-        if (match && match[2]) {
-          shippingCost = match[2].replace(/,/g, '');
-          console.log("Found shipping cost in strong tag:", shippingCost);
-          return shippingCost;
-        }
-      }
-    }
-
-    // Try the shipping div itself
-    const shippingContent = document.querySelector('.shipping--content--ulA3urO');
-    if (shippingContent) {
-      const text = shippingContent.textContent.trim();
-      if (text.includes('Shipping:')) {
-        const match = text.match(/Shipping:\s*(\$|PKR|US\s*\$|€)?\s*([\d,.]+)/i);
-        if (match && match[2]) {
-          shippingCost = match[2].replace(/,/g, '');
-          console.log("Found shipping cost in shipping content:", shippingCost);
-          return shippingCost;
-        }
-      }
-    }
-
-    // Check for free shipping
-    const freeShippingTexts = ['Free Shipping', 'Free shipping', 'free shipping'];
-    for (const text of freeShippingTexts) {
-      if (document.body.textContent.includes(text)) {
-        console.log("Found free shipping text");
-        return '0';
-      }
-    }
-
-    // Try other shipping elements
-    const shippingElements = [
-      document.querySelector('.shipping--deliveryInfoRow--3fmGP'),
-      document.querySelector('.product-shipping-price'),
-      document.querySelector('.shipping-link'),
-      document.querySelector('[data-pl="shipping-info"]'),
-      document.querySelector('[data-spm-anchor-id*="shipping"]')
-    ].filter(Boolean);
-
-    for (const el of shippingElements) {
-      const text = el.textContent.trim();
-
-      if (text.toLowerCase().includes('free')) {
-        return '0';
-      }
-
-      const match = text.match(/(\$|PKR|US\s*\$|€)?\s*([\d,.]+)/);
-      if (match && match[2]) {
-        shippingCost = match[2].replace(/,/g, '');
-        console.log("Found shipping cost in general shipping element:", shippingCost);
-        return shippingCost;
-      }
-    }
-
-    return shippingCost;
-  } catch (error) {
-    console.error("Error extracting shipping cost:", error);
-    return shippingCost;
+    result = newResult;
   }
+
+  return result;
 }
 
 // Format the scraped data for CSV export
@@ -1215,36 +1346,6 @@ function formatDataForCSV(productData) {
   return rows;
 }
 
-// Function to generate all possible combinations of variations
-function generateAllCombinations(variationGroups) {
-  if (!variationGroups || variationGroups.length === 0) {
-    return [];
-  }
-
-  // Start with the first group's options
-  let result = variationGroups[0].options.map(option => [option]);
-
-  // For each additional group, combine with existing results
-  for (let i = 1; i < variationGroups.length; i++) {
-    const currentGroup = variationGroups[i];
-    const newResult = [];
-
-    // For each existing combination
-    for (let j = 0; j < result.length; j++) {
-      const existingCombo = result[j];
-
-      // Add each option from current group to create new combinations
-      for (let k = 0; k < currentGroup.options.length; k++) {
-        newResult.push([...existingCombo, currentGroup.options[k]]);
-      }
-    }
-
-    result = newResult;
-  }
-
-  return result;
-}
-
 // Helper function to convert data to CSV
 function convertToCSV(data) {
   // Define headers based on the data structure
@@ -1282,48 +1383,27 @@ function convertToCSV(data) {
   return csvContent;
 }
 
-// Initialize the extension
-function initializeExtension() {
-  console.log("Initializing AliExpress Scraper...");
+// Initialize with improved strategy for detecting product pages
+console.log("AliExpress Scraper content script loaded");
 
-  // Check if we're on a product page
-  if (window.location.href.includes('/item/')) {
-    createScrapeButton();
-  } else {
-    console.log("Not a product page, skipping button creation");
-  }
-}
-
-// Handle navigation events for single-page applications
-function setupNavigationObserver() {
-  let lastUrl = window.location.href;
-  const observer = new MutationObserver(() => {
-    if (lastUrl !== window.location.href) {
-      lastUrl = window.location.href;
-
-      // Remove existing button if it exists
-      const existingContainer = document.getElementById('aliexpress-scraper-container');
-      if (existingContainer) {
-        existingContainer.remove();
-      }
-
-      // Add new button if on a product page
-      if (window.location.href.includes('/item/')) {
-        createScrapeButton();
-      }
-    }
-  });
-
-  observer.observe(document, { subtree: true, childList: true });
-}
-
-// Wait for page to fully load before initializing
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => {
-    initializeExtension();
-    setupNavigationObserver();
-  });
+// Initial check
+if (isProductPage()) {
+  console.log("Product page detected on initial load");
+  waitForProductElements();
 } else {
-  initializeExtension();
-  setupNavigationObserver();
+  console.log("Not a product page on initial load");
 }
+
+// Continue monitoring for navigation
+setupNavigationObserver();
+
+// Also add an additional window.load event for good measure
+window.addEventListener('load', () => {
+  console.log("Window load event fired");
+  setTimeout(() => {
+    if (isProductPage() && !document.getElementById('aliexpress-scraper-container')) {
+      console.log("Trying after window load event");
+      waitForProductElements();
+    }
+  }, 1000);
+});

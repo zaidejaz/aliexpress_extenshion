@@ -5,190 +5,317 @@
   <style>
     body {
       font-family: Arial, sans-serif;
-      width: 320px;
+      width: 480px;
       padding: 15px;
+      margin: 0;
     }
     
     h1 {
-      font-size: 16px;
+      font-size: 18px;
       margin-bottom: 15px;
       color: #333;
       text-align: center;
     }
     
-    .form-group {
-      margin-bottom: 12px;
-    }
-    
-    label {
-      display: block;
-      margin-bottom: 5px;
-      font-weight: bold;
-      font-size: 12px;
-      color: #555;
-    }
-    
-    input, select {
-      width: 100%;
-      padding: 8px;
-      border: 1px solid #ddd;
+    .summary {
+      display: flex;
+      justify-content: space-between;
+      background-color: #f5f5f5;
+      padding: 10px;
       border-radius: 4px;
-      box-sizing: border-box;
+      margin-bottom: 15px;
     }
     
-    .row {
+    .summary-item {
+      text-align: center;
+    }
+    
+    .summary-value {
+      font-size: 18px;
+      font-weight: bold;
+      color: #FF4747;
+    }
+    
+    .summary-label {
+      font-size: 12px;
+      color: #666;
+    }
+    
+    .buttons {
       display: flex;
       gap: 10px;
-    }
-    
-    .col {
-      flex: 1;
+      margin-bottom: 15px;
     }
     
     button {
-      width: 100%;
-      padding: 10px;
-      background-color: #FF4747;
-      color: white;
+      padding: 8px 12px;
       border: none;
       border-radius: 4px;
       cursor: pointer;
       font-weight: bold;
-      margin-top: 10px;
+      flex: 1;
     }
     
-    button:hover {
+    .primary-btn {
+      background-color: #FF4747;
+      color: white;
+    }
+    
+    .primary-btn:hover {
       background-color: #E60000;
     }
     
-    .button-group {
-      display: flex;
-      gap: 10px;
+    .secondary-btn {
+      background-color: #4CAF50;
+      color: white;
     }
     
-    .stats {
-      margin-top: 15px;
-      display: flex;
-      justify-content: space-between;
-      padding: 10px;
-      background-color: #f9f9f9;
-      border-radius: 4px;
+    .secondary-btn:hover {
+      background-color: #45a049;
     }
     
-    .stats div {
-      text-align: center;
+    .danger-btn {
+      background-color: #f44336;
+      color: white;
     }
     
-    .stats span {
-      display: block;
-      font-weight: bold;
-      font-size: 14px;
-      color: #333;
+    .danger-btn:hover {
+      background-color: #d32f2f;
     }
     
-    .stats small {
-      font-size: 10px;
-      color: #777;
-    }
-    
-    .auth-status {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 15px;
-      padding: 8px;
-      background-color: #f9f9f9;
-      border-radius: 4px;
-    }
-    
-    .auth-status p {
-      margin: 0;
-      font-size: 12px;
-      color: #555;
-    }
-    
-    #setupAuthBtn {
-      width: auto;
-      padding: 5px 10px;
-      font-size: 12px;
-      margin-top: 0;
+    .utility-btn {
       background-color: #2196F3;
+      color: white;
     }
     
-    #setupAuthBtn:hover {
+    .utility-btn:hover {
       background-color: #0b7dda;
     }
     
-    .help-text {
-      font-size: 10px;
-      color: #777;
-      margin-top: 4px;
+    .search-bar {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      margin-bottom: 15px;
+      box-sizing: border-box;
+    }
+    
+    .products-list {
+      overflow-y: auto;
+      max-height: 400px;
+      border: 1px solid #eee;
+      border-radius: 4px;
+    }
+    
+    .product-item {
+      padding: 12px;
+      border-bottom: 1px solid #eee;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .product-item:hover {
+      background-color: #f9f9f9;
+    }
+    
+    .product-info {
+      flex: 1;
+    }
+    
+    .product-title {
+      font-weight: bold;
+      margin-bottom: 5px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 350px;
+    }
+    
+    .product-meta {
+      display: flex;
+      gap: 10px;
+      font-size: 12px;
+      color: #666;
+    }
+    
+    .product-actions {
+      display: flex;
+      gap: 5px;
+    }
+    
+    .action-btn {
+      background-color: #f5f5f5;
+      border: 1px solid #ddd;
+      cursor: pointer;
+      color: #333;
+      padding: 5px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+    }
+    
+    .action-btn:hover {
+      background-color: #e0e0e0;
+    }
+    
+    .download-btn {
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+    }
+    
+    .download-btn:hover {
+      background-color: #45a049;
+    }
+    
+    .view-btn {
+      background-color: #2196F3;
+      color: white;
+      border: none;
+    }
+    
+    .view-btn:hover {
+      background-color: #0b7dda;
+    }
+    
+    .delete-btn {
+      background-color: #f44336;
+      color: white;
+      border: none;
+    }
+    
+    .delete-btn:hover {
+      background-color: #d32f2f;
+    }
+    
+    .no-products {
+      padding: 20px;
+      text-align: center;
+      color: #666;
+      font-style: italic;
+    }
+    
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(0, 0, 0, 0.5);
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    
+    .modal-content {
+      background-color: white;
+      padding: 20px;
+      border-radius: 4px;
+      width: 90%;
+      max-width: 400px;
+    }
+    
+    .modal-title {
+      font-size: 16px;
+      margin-bottom: 15px;
+    }
+    
+    .modal-buttons {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 20px;
+    }
+    
+    .hidden {
+      display: none;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background-color: #333;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 4px;
+      z-index: 1000;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .toast.show {
+      opacity: 1;
+    }
+    
+    .button-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    
+    .status-message {
+      text-align: center;
+      margin: 10px 0;
+      font-size: 12px;
+      color: #666;
     }
   </style>
 </head>
 <body>
-  <h1>AliExpress Scraper</h1>
+  <h1>AliExpress Product Scraper</h1>
   
-  <div class="auth-status">
-    <p>Google Auth Status: <span id="authStatus">Checking...</span></p>
-    <button id="setupAuthBtn">Setup Google Auth</button>
+  <div class="summary">
+    <div class="summary-item">
+      <div class="summary-value" id="productCount">0</div>
+      <div class="summary-label">Products Saved</div>
+    </div>
+    <div class="summary-item">
+      <div class="summary-value" id="lastScrapeDate">-</div>
+      <div class="summary-label">Last Scrape</div>
+    </div>
   </div>
   
-  <div class="form-group">
-    <label for="sheetId">Google Sheet ID</label>
-    <input type="text" id="sheetId" placeholder="Enter Google Sheet ID">
-    <p class="help-text">Find this in your Google Sheet URL: /spreadsheets/d/<span style="font-weight:bold;">SHEET_ID</span>/edit</p>
+  <div class="button-row">
+    <button id="forceButtonBtn" class="utility-btn">Show Scrape Button</button>
+    <button id="refreshBtn" class="utility-btn">Refresh Products</button>
   </div>
   
-  <div class="form-group">
-    <label for="sheetName">Sheet Name</label>
-    <input type="text" id="sheetName" placeholder="Enter Sheet Name (e.g., Sheet1)">
+  <div class="buttons">
+    <button id="downloadAllBtn" class="secondary-btn">Download All CSV</button>
+    <button id="clearAllBtn" class="danger-btn">Clear All Data</button>
   </div>
   
-  <div class="form-group">
-    <label for="functionType">Function Type</label>
-    <select id="functionType">
-      <option value="Scrape">Scrape</option>
-      <option value="URLs">URLs</option>
-      <option value="Part data">Part data</option>
-    </select>
+  <input type="text" id="searchBar" class="search-bar" placeholder="Search products...">
+  
+  <div class="products-list" id="productsList">
+    <!-- Products will be loaded dynamically -->
+    <div class="no-products" id="noProducts">
+      No products have been scraped yet. Visit a product page on AliExpress and click the "Scrape" button.
+    </div>
   </div>
   
-  <div class="row" id="rowRangeContainer">
-    <div class="col">
-      <div class="form-group">
-        <label for="startRow">Start Row</label>
-        <input type="number" id="startRow" placeholder="Start" min="1">
+  <div class="status-message">
+    If the scrape button doesn't appear, click "Show Scrape Button" while on an AliExpress product page.
+  </div>
+  
+  <!-- Confirmation Modal -->
+  <div class="modal" id="confirmModal">
+    <div class="modal-content">
+      <div class="modal-title" id="confirmTitle">Are you sure?</div>
+      <p id="confirmMessage">This action cannot be undone.</p>
+      <div class="modal-buttons">
+        <button id="cancelModalBtn">Cancel</button>
+        <button id="confirmModalBtn" class="danger-btn">Confirm</button>
       </div>
     </div>
-    <div class="col">
-      <div class="form-group">
-        <label for="endRow">End Row</label>
-        <input type="number" id="endRow" placeholder="End" min="1">
-      </div>
-    </div>
   </div>
-  
-  <div class="button-group">
-    <button id="setDataBtn">Set Data</button>
-    <button id="stopBtn">Stop</button>
-    <button id="clearDataBtn">Clear Data</button>
-  </div>
-  
-  <div class="stats">
-    <div>
-      <span id="totalUrls">0</span>
-      <small>Total URLs</small>
-    </div>
-    <div>
-      <span id="processedUrls">0</span>
-      <small>Processed</small>
-    </div>
-    <div>
-      <span id="remainingUrls">0</span>
-      <small>Remaining</small>
-    </div>
-  </div>
+
+  <!-- Toast Message -->
+  <div class="toast" id="toast"></div>
   
   <script src="popup.js"></script>
 </body>
