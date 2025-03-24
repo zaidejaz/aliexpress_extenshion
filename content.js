@@ -1,11 +1,11 @@
-// AliExpress Scraper - Content Script
+// AliExpress Scraper - Content Script with Dynamic Variant Scraping
 
 function waitForProductElements(maxAttempts = 20) {
   let attempts = 0;
-  
+
   function checkAndCreate() {
     console.log(`Attempt ${attempts + 1} to check for product elements`);
-    
+
     // Check if product elements are present
     const productElements = [
       document.querySelector('h1[data-pl="product-title"]'),
@@ -13,33 +13,33 @@ function waitForProductElements(maxAttempts = 20) {
       document.querySelector('.price--currentPriceText--V8_y_b5'),
       document.querySelector('.product-price-value')
     ];
-    
+
     if (productElements.some(el => el !== null)) {
       console.log("Product elements found, creating button");
       createScrapeButton();
       return true;
     }
-    
+
     // Check attempts limit
     attempts++;
     if (attempts >= maxAttempts) {
       console.log("Maximum attempts reached, giving up");
       return false;
     }
-    
+
     // Try again after a delay
     console.log("No product elements found yet, trying again in 1 second");
     setTimeout(checkAndCreate, 1000);
     return false;
   }
-  
+
   return checkAndCreate();
 }
 
 // Create and inject the Scrape button
 function createScrapeButton() {
   console.log("Creating scrape button...");
-  
+
   // Check if button already exists
   if (document.getElementById('aliexpress-scraper-container')) {
     console.log("Scrape button already exists");
@@ -120,7 +120,7 @@ function createScrapeButton() {
   let scrapedData = null;
 
   // Add click event to scrape button
-  scrapeButton.addEventListener('click', () => {
+  scrapeButton.addEventListener('click', async () => {
     // Change button state
     scrapeButton.textContent = 'Scraping...';
     scrapeButton.style.backgroundColor = '#FFA500';
@@ -131,16 +131,35 @@ function createScrapeButton() {
     try {
       // Extract product data directly
       const productData = scrapeProductData();
-      console.log("Scraped product data:", productData);
+      console.log("Scraped basic product data:", productData);
+
+      // Update status
+      statusDiv.textContent = 'Scraping variants (this may take a moment)...';
+
+      // Scrape all variant combinations
+      const variantData = await scrapeAllVariantCombinations();
+      console.log("Scraped variant data:", variantData);
+
+      // Show progress update
+      statusDiv.textContent = 'Processing variant data...';
 
       // Format data for CSV
-      scrapedData = formatDataForCSV(productData);
+      let formattedData = formatDataForCSV(productData);
+
+      // If we have variant data, update the product with it
+      if (variantData && variantData.length > 0) {
+        const updatedProductData = updateProductWithVariantData({ data: formattedData }, variantData);
+        formattedData = updatedProductData.data;
+      }
+
+      // Store the formatted data
+      scrapedData = formattedData;
       console.log("Formatted CSV data:", scrapedData);
 
       // Show success message
       scrapeButton.textContent = 'DONE';
       scrapeButton.style.backgroundColor = '#4CAF50';
-      statusDiv.textContent = 'Product scraped successfully!';
+      statusDiv.textContent = 'Product and variants scraped successfully!';
 
       // Show download, copy, and save buttons
       downloadButton.style.display = 'block';
@@ -245,7 +264,7 @@ function createScrapeButton() {
           statusDiv.textContent = 'Product saved successfully!';
           saveButton.textContent = 'Saved';
           saveButton.style.backgroundColor = '#4CAF50';
-          
+
           setTimeout(() => {
             saveButton.textContent = 'Save Product';
             saveButton.style.backgroundColor = '#673AB7';
@@ -261,7 +280,7 @@ function createScrapeButton() {
     } catch (error) {
       statusDiv.textContent = 'Error saving product: ' + error.message;
       console.error("Error saving product:", error);
-      
+
       saveButton.textContent = 'Save Product';
       saveButton.style.backgroundColor = '#673AB7';
       saveButton.disabled = false;
@@ -288,9 +307,9 @@ function isProductPage() {
     /\/product\/\d+/,      // Alternative pattern
     /\/i\/\d+/             // Short pattern
   ];
-  
+
   const currentUrl = window.location.href;
-  
+
   // Check each pattern
   for (const pattern of urlPatterns) {
     if (pattern.test(currentUrl)) {
@@ -298,7 +317,7 @@ function isProductPage() {
       return true;
     }
   }
-  
+
   // Additional checks for product page elements
   const productElements = [
     document.querySelector('h1[data-pl="product-title"]'),
@@ -306,12 +325,12 @@ function isProductPage() {
     document.querySelector('.price--currentPriceText--V8_y_b5'),
     document.querySelector('.product-price-value')
   ];
-  
+
   if (productElements.some(el => el !== null)) {
     console.log("Detected product page elements");
     return true;
   }
-  
+
   console.log("Not a product page:", currentUrl);
   return false;
 }
@@ -320,7 +339,7 @@ function isProductPage() {
 function setupNavigationObserver() {
   let lastUrl = window.location.href;
   console.log("Setting up navigation observer, initial URL:", lastUrl);
-  
+
   // Create a more robust observer
   const bodyObserver = new MutationObserver(() => {
     // Check if URL changed
@@ -341,7 +360,7 @@ function setupNavigationObserver() {
         waitForProductElements();
       }
     }
-    
+
     // Also periodically check for product page without URL change
     // (handles cases where content loads dynamically)
     if (isProductPage() && !document.getElementById('aliexpress-scraper-container')) {
@@ -355,7 +374,7 @@ function setupNavigationObserver() {
     childList: true,
     subtree: true
   });
-  
+
   // Also set a timer as a fallback
   setTimeout(() => {
     if (isProductPage() && !document.getElementById('aliexpress-scraper-container')) {
@@ -386,9 +405,279 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     waitForProductElements();
     sendResponse({ success: true });
   }
-  
+
   return true; // Keep the message channel open for async response
 });
+
+// Enhanced function to extract the current variant details
+function extractVariantDetails() {
+  // Extract current price
+  const priceElement = document.querySelector('.price--currentPriceText--V8_y_b5') ||
+    document.querySelector('.product-price-value') ||
+    document.querySelector('.uniform-banner-box-price') ||
+    document.querySelector('[data-pl="product-price"]');
+
+  let price = '';
+  if (priceElement) {
+    const priceText = priceElement.textContent.trim();
+    const match = priceText.match(/[\d,.]+/);
+    if (match) {
+      price = match[0].replace(/,/g, '');
+    }
+  }
+
+  // Extract current shipping cost
+  let shipping = extractShippingCost();
+
+  // Extract current quantity
+  let quantity = '999'; // Default
+  try {
+    const qtyElements = [
+      document.querySelector('.quantity--availText--EdCcDZ9'),
+      document.querySelector('[data-spm-anchor-id*="available"]'),
+      ...document.querySelectorAll('[data-spm-anchor-id*="quantity"]')
+    ];
+
+    for (const el of qtyElements) {
+      if (el) {
+        const match = el.textContent.match(/(\d+)/);
+        if (match && match[1]) {
+          quantity = match[1];
+          break;
+        }
+      }
+    }
+
+    // More general quantity search in text nodes
+    if (quantity === '999') {
+      const textNodes = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      let currentNode;
+      while (currentNode = textNodes.nextNode()) {
+        if (currentNode.textContent.match(/\b\d+\s+available\b/i)) {
+          const match = currentNode.textContent.match(/(\d+)\s+available/i);
+          if (match && match[1]) {
+            quantity = match[1];
+            break;
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Error extracting quantity:", error);
+  }
+
+  // Check if the variant is available
+  const isAvailable = !document.body.textContent.includes("Out of stock") &&
+    !document.body.textContent.includes("Sold out");
+
+  return {
+    price,
+    shipping,
+    quantity,
+    isAvailable
+  };
+}
+
+// Function to scrape all variant combinations
+async function scrapeAllVariantCombinations() {
+  console.log("Starting to scrape all variant combinations...");
+
+  // Store all variant combinations with their specific data
+  const variantData = [];
+
+  // Get all variation groups
+  const variationGroups = document.querySelectorAll('.sku-item--property--HuasaIz, .sku-property-wrapper, [data-pl="sku-selector"]');
+
+  if (variationGroups.length === 0) {
+    console.log("No variation groups found");
+    return null;
+  }
+
+  // Get all options for all variation groups
+  const allGroupOptions = [];
+
+  for (let i = 0; i < variationGroups.length; i++) {
+    const group = variationGroups[i];
+
+    // Get group name
+    const groupTitleElement = group.querySelector('.sku-item--title--Z0HLO87, .sku-title, [data-pl="sku-title"]');
+    if (!groupTitleElement) continue;
+
+    let groupName = groupTitleElement.textContent.trim();
+    groupName = groupName.replace(/\s*:\s*.*$/, '');
+
+    // Find all available options for this group
+    const options = [];
+
+    // For image-based options
+    const imageOptions = group.querySelectorAll('.sku-item--image--jMUnnGA:not(.sku-item--soldOut--YJfuCGq), .sku-property-item:not(.disabled):not(.soldout), [data-pl="sku-item"]:not(.disabled):not(.soldout)');
+
+    imageOptions.forEach(optionElement => {
+      const img = optionElement.querySelector('img');
+      if (!img) return;
+
+      const optionValue = img.getAttribute('alt') || '';
+      if (optionValue) {
+        options.push({
+          element: optionElement,
+          value: optionValue,
+          type: 'image'
+        });
+      }
+    });
+
+    // For text-based options
+    const textOptions = group.querySelectorAll('.sku-item--text--hYfAukP:not(.sku-item--soldOut--YJfuCGq), .sku-property-text:not(.disabled):not(.soldout), [data-pl="sku-text"]:not(.disabled):not(.soldout)');
+
+    textOptions.forEach(optionElement => {
+      const optionValue = optionElement.getAttribute('title') || optionElement.textContent.trim();
+      if (optionValue) {
+        options.push({
+          element: optionElement,
+          value: optionValue,
+          type: 'text'
+        });
+      }
+    });
+
+    if (options.length > 0) {
+      allGroupOptions.push({
+        name: groupName,
+        options: options
+      });
+    }
+  }
+
+  // If no options found, return
+  if (allGroupOptions.length === 0) {
+    console.log("No variation options found");
+    return null;
+  }
+
+  console.log("Found variation groups:", allGroupOptions.length);
+  allGroupOptions.forEach(group => {
+    console.log(`Group: ${group.name}, Options: ${group.options.length}`);
+  });
+
+  // Function to recursively select all combinations of options
+  async function selectCombination(groupIndex, selectedOptions = []) {
+    // If we've selected an option for each group, capture the data
+    if (groupIndex >= allGroupOptions.length) {
+      // Wait for price and quantity to update after selection
+      await new Promise(resolve => setTimeout(resolve, 700));
+
+      // Get the variant-specific data
+      const variantDetails = extractVariantDetails();
+
+      // Create a record for this combination
+      const record = {
+        combination: selectedOptions.map((option, index) => ({
+          group: allGroupOptions[index].name,
+          value: option.value
+        })),
+        price: variantDetails.price,
+        shipping: variantDetails.shipping,
+        quantity: variantDetails.quantity,
+        isAvailable: variantDetails.isAvailable
+      };
+
+      console.log("Captured variant data:", record);
+      variantData.push(record);
+
+      // Wait a bit before moving to next combination
+      await new Promise(resolve => setTimeout(resolve, 200));
+
+      return;
+    }
+
+    // Try each option in the current group
+    const currentGroup = allGroupOptions[groupIndex];
+
+    for (const option of currentGroup.options) {
+      try {
+        // Select this option by clicking on it
+        console.log(`Selecting ${currentGroup.name} = ${option.value}`);
+        option.element.click();
+
+        // Wait for the UI to update
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        // Continue to the next group
+        await selectCombination(groupIndex + 1, [...selectedOptions, option]);
+      } catch (error) {
+        console.error(`Error selecting option ${option.value}:`, error);
+      }
+    }
+  }
+
+  // Start the recursive selection process
+  await selectCombination(0);
+  console.log("Completed variant data collection");
+
+  return variantData;
+}
+
+// Function to update the variation data in the product structure
+function updateProductWithVariantData(productData, variantData) {
+  // Safety check
+  if (!productData || !variantData || !Array.isArray(variantData) || variantData.length === 0) {
+    console.log("No variant data to update");
+    return productData;
+  }
+
+  // Clone the product data to avoid modifying the original
+  const updatedProduct = JSON.parse(JSON.stringify(productData));
+
+  // Process each variant combination
+  variantData.forEach(variant => {
+    // Create the variant details string (e.g., "Color=Red|Size=Small")
+    let variantDetails = '';
+    const skuParts = [];
+
+    variant.combination.forEach((item, index) => {
+      variantDetails += `${item.group}=${item.value}`;
+      if (index < variant.combination.length - 1) {
+        variantDetails += '|';
+      }
+
+      // Create SKU part
+      const safeValue = item.value.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9-]/g, '');
+      skuParts.push(safeValue);
+    });
+
+    // Find the matching variation in the product data
+    if (updatedProduct.data && Array.isArray(updatedProduct.data)) {
+      for (let i = 0; i < updatedProduct.data.length; i++) {
+        const row = updatedProduct.data[i];
+
+        // Look for the variant row that matches this combination
+        if (row['Relationship'] === 'Variation' &&
+          row['Relationship details'] === variantDetails) {
+
+          // Update the row with the variant-specific data
+          if (variant.price) row['Price'] = variant.price;
+          if (variant.shipping) row['SHIP'] = variant.shipping;
+          if (variant.quantity) row['Quantity'] = variant.quantity;
+
+          // Also update the total if we have both price and shipping
+          if (variant.price && variant.shipping) {
+            row['TOTAL'] = (parseFloat(variant.price) + parseFloat(variant.shipping)).toFixed(2);
+          }
+
+          // If the variant is not available, set quantity to 0
+          if (!variant.isAvailable) {
+            row['Quantity'] = '0';
+          }
+
+          console.log(`Updated variant: ${variantDetails}`);
+          break;
+        }
+      }
+    }
+  });
+
+  return updatedProduct;
+}
 
 // Main function to scrape product data
 function scrapeProductData() {
@@ -678,7 +967,7 @@ function extractStoreInfo() {
     storeNo: '',
     openSince: ''
   };
-  
+
   try {
     // Direct approach targeting the specific table rows
     const storeInfoTable = document.querySelector('.store-detail--storeInfo--BMDFsTB table');
@@ -690,7 +979,7 @@ function extractStoreInfo() {
         if (cells.length >= 2) {
           const label = cells[0].textContent.trim();
           const value = cells[1].textContent.trim();
-          
+
           if (label.includes('Name:')) {
             storeInfo.storeName = value;
             console.log("Found store name:", value);
@@ -704,7 +993,7 @@ function extractStoreInfo() {
         }
       });
     }
-    
+
     // If store info is still missing, try alternative methods
     if (!storeInfo.storeName) {
       const storeNameElement = document.querySelector('.shop-name, .store-name, [data-pl="store-name"]');
@@ -712,7 +1001,7 @@ function extractStoreInfo() {
         storeInfo.storeName = storeNameElement.textContent.trim();
       }
     }
-    
+
     if (!storeInfo.storeNo) {
       // Look for store number in links
       const storeLinks = document.querySelectorAll('a[href*="store"]');
@@ -725,7 +1014,7 @@ function extractStoreInfo() {
         }
       }
     }
-    
+
     // If we still don't have the open since date, search more broadly
     if (!storeInfo.openSince) {
       // Use XPath to find elements containing text
@@ -739,7 +1028,7 @@ function extractStoreInfo() {
         }
       }
     }
-    
+
     // Last resort: look for text pattern in all text nodes
     if (!storeInfo.openSince) {
       const textWalker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
@@ -748,14 +1037,14 @@ function extractStoreInfo() {
         if (textNode.textContent.includes('Open since:')) {
           // Try to find the date in the parent or sibling elements
           const parentEl = textNode.parentElement;
-          
+
           // Check if the next sibling has the date
           if (parentEl.nextElementSibling) {
             storeInfo.openSince = parentEl.nextElementSibling.textContent.trim();
             console.log("Found open since from next sibling:", storeInfo.openSince);
             break;
           }
-          
+
           // Otherwise, check if it's in the same element after the text
           const text = parentEl.textContent;
           const match = text.match(/Open since:\s*([A-Za-z0-9,\s]+)/i);
@@ -767,7 +1056,7 @@ function extractStoreInfo() {
         }
       }
     }
-    
+
     return storeInfo;
   } catch (error) {
     console.error("Error extracting store info:", error);
@@ -775,7 +1064,7 @@ function extractStoreInfo() {
   }
 }
 
-// Function to extract shipping cost (continued)
+// Function to extract shipping cost
 function extractShippingCost() {
   let shippingCost = '0'; // Default to free shipping
 
@@ -1384,7 +1673,7 @@ function convertToCSV(data) {
 }
 
 // Initialize with improved strategy for detecting product pages
-console.log("AliExpress Scraper content script loaded");
+console.log("AliExpress Scraper content script loaded with dynamic variant scraping");
 
 // Initial check
 if (isProductPage()) {
