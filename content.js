@@ -679,8 +679,193 @@ function updateProductWithVariantData(productData, variantData) {
   return updatedProduct;
 }
 
+function extractWarningsAndDisclaimers() {
+  try {
+    // Target only the exact element with the specific class
+    const warningElement = document.querySelector('.remind--msg--bmjMqyw');
+    
+    if (warningElement) {
+      const warningText = warningElement.textContent.trim();
+      console.log("Found warning element with class 'remind--msg--bmjMqyw':", warningText);
+      return warningText;
+    }
+    
+    // If not found, return empty string
+    return '';
+  } catch (error) {
+    console.error("Error extracting warning:", error);
+    return '';
+  }
+}
+
+// Function to extract product sell points
+function extractProductSellPoints() {
+  const sellPoints = [];
+
+  try {
+    // Target the specific sell points container
+    const sellPointContainers = document.querySelectorAll('.seo-sellpoints--sellerPoint--RcmFO_y, [class*="sellpoints"], [class*="sell-point"], [data-spm-anchor-id*="sellpoint"]');
+
+    sellPointContainers.forEach(container => {
+      const points = container.querySelectorAll('li');
+      points.forEach(point => {
+        // Check for pre tag first
+        const preElement = point.querySelector('pre');
+        const pointText = preElement ? preElement.textContent.trim() : point.textContent.trim();
+
+        if (pointText) {
+          sellPoints.push(pointText);
+        }
+      });
+    });
+
+    // If no specific sell points found, try to find feature lists
+    if (sellPoints.length === 0) {
+      const featureLists = document.querySelectorAll('.product-features, .feature-list, .product-highlights');
+
+      featureLists.forEach(list => {
+        const items = list.querySelectorAll('li');
+        items.forEach(item => {
+          const text = item.textContent.trim();
+          if (text) {
+            sellPoints.push(text);
+          }
+        });
+      });
+    }
+  } catch (error) {
+    console.error("Error extracting sell points:", error);
+  }
+
+  return sellPoints.join('\n');
+}
+
+// Function to extract video URLs
+function extractVideoUrls() {
+  const videos = [];
+
+  try {
+    // Look for video elements
+    const videoElements = document.querySelectorAll('video');
+
+    videoElements.forEach(video => {
+      const sourceElements = video.querySelectorAll('source');
+
+      if (sourceElements.length > 0) {
+        // Get sources
+        sourceElements.forEach(source => {
+          const videoUrl = source.getAttribute('src');
+          if (videoUrl && !videos.includes(videoUrl)) {
+            videos.push(videoUrl);
+          }
+        });
+      } else {
+        // Check if video has src directly
+        const videoSrc = video.getAttribute('src');
+        if (videoSrc && !videos.includes(videoSrc)) {
+          videos.push(videoSrc);
+        }
+      }
+
+      // Get poster image as fallback
+      const posterUrl = video.getAttribute('poster');
+      if (posterUrl && videos.length === 0) {
+        videos.push(`Poster: ${posterUrl}`);
+      }
+    });
+
+    // Look for iframe videos (like YouTube)
+    const iframeVideos = document.querySelectorAll('iframe[src*="youtube"], iframe[src*="vimeo"]');
+    iframeVideos.forEach(iframe => {
+      const iframeSrc = iframe.getAttribute('src');
+      if (iframeSrc && !videos.includes(iframeSrc)) {
+        videos.push(iframeSrc);
+      }
+    });
+  } catch (error) {
+    console.error("Error extracting video URLs:", error);
+  }
+
+  return videos.join('\n');
+}
+
+// Complete rewrite of the specifications extractor
+async function extractSpecifications() {
+  console.log("Starting specifications extraction...");
+  const specifications = {};
+
+  try {
+    // Step 1: Find the specifications container
+    const specsContainer = document.getElementById('nav-specification') ||
+      document.querySelector('.specification--wrap--lxVQ2tj') ||
+      document.querySelector('[data-pl="product-specs"]');
+
+    if (!specsContainer) {
+      console.log("Specifications container not found");
+      return specifications;
+    }
+
+    console.log("Found specifications container:", specsContainer);
+
+    // Step 2: Try to find the View more button
+    const viewMoreButton = specsContainer.querySelector('button');
+
+    if (viewMoreButton && viewMoreButton.textContent.includes('View more')) {
+      console.log("Found View more button, clicking it...");
+      try {
+        viewMoreButton.click();
+        // Wait for expanded content to load
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        console.log("Clicked View more button, waited for content to load");
+      } catch (clickError) {
+        console.error("Error clicking View more button:", clickError);
+      }
+    }
+
+    // Step 3: Extract specification items
+    // Try different selectors based on the HTML structure you provided
+    const specRows = specsContainer.querySelectorAll('.specification--line--IXeRJI7') ||
+      specsContainer.querySelectorAll('li');
+
+    console.log(`Found ${specRows.length} specification rows`);
+
+    for (const row of specRows) {
+      const propContainers = row.querySelectorAll('.specification--prop--Jh28bKu');
+
+      for (const propContainer of propContainers) {
+        const titleElement = propContainer.querySelector('.specification--title--SfH3sA8');
+        const valueElement = propContainer.querySelector('.specification--desc--Dxx6W0W');
+
+        if (titleElement && valueElement) {
+          const title = titleElement.textContent.trim();
+          const value = valueElement.textContent.trim();
+
+          specifications[title] = value;
+          console.log(`Extracted specification: ${title} = ${value}`);
+        }
+      }
+    }
+    // Format the specifications as text
+    if (Object.keys(specifications).length === 0) {
+      return "";
+    }
+
+    // Convert to key-value pair text format
+    let formattedSpecs = "";
+    for (const [key, value] of Object.entries(specifications)) {
+      formattedSpecs += `${key}: ${value}\n`;
+    }
+
+    return formattedSpecs;
+  } catch (error) {
+    console.error("Error extracting specifications:", error);
+    return "";
+  }
+}
+
 // Main function to scrape product data
 function scrapeProductData() {
+  // Check for product issues
   // Check for product issues
   const pageContent = document.body.textContent;
   if (pageContent.includes("This product can't be shipped to your address") ||
@@ -720,7 +905,7 @@ function scrapeProductData() {
     }
   }
 
-  // Extract quantity information - improved to handle all formats
+  // Extract quantity information
   try {
     // Look for the quantity text
     const qtyPatterns = [
@@ -928,19 +1113,6 @@ function scrapeProductData() {
   // Extract all variations with improved image handling
   data.variations = extractAllVariations(imageData.variantImages);
 
-  // Extract sell points (product highlights)
-  const sellPointElements = document.querySelectorAll('.product-feature, .product-highlight, .feature-item, li[data-pl="product-feature"]');
-  const sellPoints = [];
-  sellPointElements.forEach(point => {
-    const text = point.textContent.trim();
-    if (text) {
-      sellPoints.push(text);
-    }
-  });
-  if (sellPoints.length > 0) {
-    data.productSellpoints = sellPoints.join('\n');
-  }
-
   // Extract ship to country
   const shipToElement = document.querySelector('[data-spm-anchor-id*="ship to"] span') || document.querySelector('[data-spm-anchor-id*="ship-to"] span');
   if (shipToElement) {
@@ -956,6 +1128,26 @@ function scrapeProductData() {
       }
     }
   }
+
+  // NEW ADDITIONS: Extract additional data fields
+
+  // 1. Extract warnings and disclaimers
+  data.warnings = extractWarningsAndDisclaimers();
+  console.log("Extracted warnings:", data.warnings);
+
+  // 2. Extract product sell points
+  data.productSellpoints = extractProductSellPoints();
+  console.log("Extracted sell points:", data.productSellpoints);
+
+  // 3. Extract video URLs
+  data.videoUrls = extractVideoUrls();
+  console.log("Extracted video URLs:", data.videoUrls);
+
+  // 4. Extract detailed specifications
+  extractSpecifications().then(specs => {
+    data.detailedSpecifications = specs;
+    console.log("Extracted detailed specifications:", data.detailedSpecifications);
+  });
 
   return data;
 }
@@ -1415,7 +1607,7 @@ function generateAllCombinations(variationGroups) {
   return result;
 }
 
-// Format the scraped data for CSV export
+// Updated function to format data for CSV based on the provided template
 function formatDataForCSV(productData) {
   const rows = [];
 
@@ -1423,35 +1615,64 @@ function formatDataForCSV(productData) {
   if (!productData.variations || productData.variations.length === 0) {
     const row = {
       '#': 1,
+      'SKU': productData.customLabel || '',
+      'Ebay#': '',
+      'Person': '',
+      'List date': '',
+      'Keyword': '',
       'URL': productData.url || '',
-      'Action': '',
-      'Custom Label (SKU)': productData.customLabel || '',
-      'Category ID': productData.categoryId || '',
-      'Category Name': productData.categoryName || '',
-      'Title': productData.title || '',
-      'Relationship': '',
-      'Relationship details': '',
-      'P:Schedule Time': '',
-      'P:UPC': productData.upc || '',
-      'P:EPID': productData.epid || '',
-      'Price': productData.price || '',
-      'Quantity': productData.quantity || '999', // Use scraped quantity or default
-      'Item photo URL': productData.photos || '',
-      'VideoID': '',
-      'Condition ID': '',
-      'Description': productData.description || '',
-      'SHIP': productData.shipping || '',
-      'TOTAL': productData.total || '',
-      'P:EAN': productData.ean || '',
-      'Specifications Warning': productData.specificationsWarning || '',
-      'Product sellpoints': productData.productSellpoints || '',
-      'multiplier': '',
-      'Buy It Now price': '',
-      'Ship to': productData.shipTo || 'US', // Use scraped ship to or default
       'Store Name': productData.storeName || '',
       'Store no': productData.storeNo || '',
-      'Open since': productData.openSince || '',
-      'Scan date': productData.scanDate || ''
+      'Price': productData.price || '',
+      'Quantity': productData.quantity || '999',
+      'SHIP': productData.shipping || '',
+      'Ship to': productData.shipTo || 'US',
+      'TOTAL': productData.total || '',
+      'multiplier': '',
+      'Title': productData.title || '',
+      'Description': productData.description || '',
+      'Specifications': productData.detailedSpecifications || '',
+      'Warning/Disclaimer': productData.warnings || '',
+      'Product sellpoints': productData.productSellpoints || '',
+      'Scan Date': productData.scanDate || '',
+      'Action': 'Add',
+      'SKU': productData.customLabel || '',
+      'Category ID': productData.categoryId || '',
+      'Category Name': productData.categoryName || '',
+      'Title': '',
+      'Relationship': '',
+      'Relationship details': '',
+      'Schedule Time': '',
+      'P:UPC': productData.upc || '',
+      'P:EPID': productData.epid || '',
+      'Start price': '',
+      'Quantity': '',
+      'Item photo URL': productData.photos || '',
+      'VideoID': productData.videoUrls || '',
+      'Condition ID': '',
+      'Description.1': productData.description || '',
+      'Format': '',
+      'Duration': '',
+      'Buy It Now price': '',
+      'Best Offer Enabled': '',
+      'Best Offer Auto Accept Price': '',
+      'Minimum Best Offer Price': '',
+      'Immediate pay required': '',
+      'Location': '',
+      'Shipping service 1 option': '',
+      'Shipping service 1 cost': '',
+      'Shipping service 1 priority': '',
+      'Shipping service 2 option': '',
+      'Shipping service 2 cost': '',
+      'Shipping service 2 priority': '',
+      'Max dispatch time': '',
+      'Returns accepted option': '',
+      'Returns within option': '',
+      'Refund option': '',
+      'Return shipping cost paid by': '',
+      'Shipping profile name': '',
+      'Return profile name': '',
+      'Payment profile name': ''
     };
 
     rows.push(row);
@@ -1480,35 +1701,64 @@ function formatDataForCSV(productData) {
   // Parent row (first row)
   const parentRow = {
     '#': 1,
+    'SKU': productData.customLabel || '',
+    'Ebay#': '',
+    'Person': '',
+    'List date': '',
+    'Keyword': '',
     'URL': productData.url || '',
-    'Action': '',
-    'Custom Label (SKU)': productData.customLabel || '',
-    'Category ID': productData.categoryId || '',
-    'Category Name': productData.categoryName || '',
-    'Title': productData.title || '',
-    'Relationship': '',
-    'Relationship details': relationshipDetails,
-    'P:Schedule Time': '',
-    'P:UPC': productData.upc || '',
-    'P:EPID': productData.epid || '',
-    'Price': productData.price || '',
-    'Quantity': productData.quantity || '999',
-    'Item photo URL': productData.photos || '',
-    'VideoID': '',
-    'Condition ID': '',
-    'Description': productData.description || '',
-    'SHIP': productData.shipping || '',
-    'TOTAL': productData.total || '',
-    'P:EAN': productData.ean || '',
-    'Specifications Warning': productData.specificationsWarning || '',
-    'Product sellpoints': productData.productSellpoints || '',
-    'multiplier': '',
-    'Buy It Now price': '',
-    'Ship to': productData.shipTo || 'US',
     'Store Name': productData.storeName || '',
     'Store no': productData.storeNo || '',
-    'Open since': productData.openSince || '',
-    'Scan date': productData.scanDate || ''
+    'Price': productData.price || '',
+    'Quantity': productData.quantity || '999',
+    'SHIP': productData.shipping || '',
+    'Ship to': productData.shipTo || 'US',
+    'TOTAL': productData.total || '',
+    'multiplier': '',
+    'Title': productData.title || '',
+    'Description': productData.description || '',
+    'Specifications': productData.detailedSpecifications || '',
+    'Warning/Disclaimer': productData.warnings || '',
+    'Product sellpoints': productData.productSellpoints || '',
+    'Scan Date': productData.scanDate || '',
+    'Action': 'Add',
+    'SKU': productData.customLabel || '',
+    'Category ID': productData.categoryId || '',
+    'Category Name': productData.categoryName || '',
+    'Title': '',
+    'Relationship': '',
+    'Relationship details': relationshipDetails,
+    'Schedule Time': '',
+    'P:UPC': productData.upc || '',
+    'P:EPID': productData.epid || '',
+    'Start price': '',
+    'Quantity.1': '',
+    'Item photo URL': productData.photos || '',
+    'VideoID': productData.videoUrls || '',
+    'Condition ID': '',
+    'Description.1': productData.description || '',
+    'Format': '',
+    'Duration': '',
+    'Buy It Now price': '',
+    'Best Offer Enabled': '',
+    'Best Offer Auto Accept Price': '',
+    'Minimum Best Offer Price': '',
+    'Immediate pay required': '',
+    'Location': '',
+    'Shipping service 1 option': '',
+    'Shipping service 1 cost': '',
+    'Shipping service 1 priority': '',
+    'Shipping service 2 option': '',
+    'Shipping service 2 cost': '',
+    'Shipping service 2 priority': '',
+    'Max dispatch time': '',
+    'Returns accepted option': '',
+    'Returns within option': '',
+    'Refund option': '',
+    'Return shipping cost paid by': '',
+    'Shipping profile name': '',
+    'Return profile name': '',
+    'Payment profile name': ''
   };
 
   rows.push(parentRow);
@@ -1554,35 +1804,64 @@ function formatDataForCSV(productData) {
       // Create the variation row
       const variationRow = {
         '#': rowIndex++,
+        'SKU': `${productData.customLabel}-${skuSuffix}`,
+        'Ebay#': '',
+        'Person': '',
+        'List date': '',
+        'Keyword': '',
         'URL': '',
+        'Store Name': '',
+        'Store no': '',
+        'Price': productData.price || '',
+        'Quantity': productData.quantity || '999',
+        'SHIP': productData.shipping || '',
+        'Ship to': productData.shipTo || 'US',
+        'TOTAL': productData.total || '',
+        'multiplier': '',
+        'Title': '',
+        'Description': '',
+        'Specifications': '',
+        'Warning/Disclaimer': '',
+        'Product sellpoints': '',
+        'Scan Date': '',
         'Action': '',
-        'Custom Label (SKU)': `${productData.customLabel}-${skuSuffix}`,
+        'SKU': `${productData.customLabel}-${skuSuffix}`,
         'Category ID': '',
         'Category Name': '',
         'Title': '',
         'Relationship': 'Variation',
         'Relationship details': variantDetails,
-        'P:Schedule Time': '',
+        'Schedule Time': '',
         'P:UPC': productData.upc || '',
         'P:EPID': productData.epid || '',
-        'Price': productData.price || '',
-        'Quantity': productData.quantity || '999',
+        'Start price': '',
+        'Quantity': '',
         'Item photo URL': itemPhotoURL || '',
         'VideoID': '',
         'Condition ID': '',
-        'Description': '',
-        'SHIP': productData.shipping || '',
-        'TOTAL': productData.total || '',
-        'P:EAN': productData.ean || '',
-        'Specifications Warning': '',
-        'Product sellpoints': '',
-        'multiplier': '',
+        'Description.1': '',
+        'Format': '',
+        'Duration': '',
         'Buy It Now price': '',
-        'Ship to': productData.shipTo || 'US',
-        'Store Name': '',
-        'Store no': '',
-        'Open since': '',
-        'Scan date': ''
+        'Best Offer Enabled': '',
+        'Best Offer Auto Accept Price': '',
+        'Minimum Best Offer Price': '',
+        'Immediate pay required': '',
+        'Location': '',
+        'Shipping service 1 option': '',
+        'Shipping service 1 cost': '',
+        'Shipping service 1 priority': '',
+        'Shipping service 2 option': '',
+        'Shipping service 2 cost': '',
+        'Shipping service 2 priority': '',
+        'Max dispatch time': '',
+        'Returns accepted option': '',
+        'Returns within option': '',
+        'Refund option': '',
+        'Return shipping cost paid by': '',
+        'Shipping profile name': '',
+        'Return profile name': '',
+        'Payment profile name': ''
       };
 
       rows.push(variationRow);
@@ -1597,35 +1876,64 @@ function formatDataForCSV(productData) {
 
       const variationRow = {
         '#': rowIndex++,
+        'SKU': `${productData.customLabel}-${safeValue}`,
+        'Ebay#': '',
+        'Person': '',
+        'List date': '',
+        'Keyword': '',
         'URL': '',
-        'Action': '',
-        'Custom Label (SKU)': `${productData.customLabel}-${safeValue}`,
-        'Category ID': '',
-        'Category Name': '',
-        'Title': '',
-        'Relationship': 'Variation',
-        'Relationship details': `${group.groupName}=${option.value}`,
-        'P:Schedule Time': '',
-        'P:UPC': productData.upc || '',
-        'P:EPID': productData.epid || '',
+        'Store Name': '',
+        'Store no': '',
         'Price': productData.price || '',
         'Quantity': productData.quantity || '999',
+        'SHIP': productData.shipping || '',
+        'Ship to': productData.shipTo || 'US',
+        'TOTAL': productData.total || '',
+        'multiplier': '',
+        'Title': '',
+        'Description': '',
+        'Specifications': '',
+        'Warning/Disclaimer': '',
+        'Product sellpoints': '',
+        'Scan Date': '',
+        'Action': '',
+        'SKU.1': `${productData.customLabel}-${safeValue}`,
+        'Category ID': '',
+        'Category Name': '',
+        'Title.1': '',
+        'Relationship': 'Variation',
+        'Relationship details': `${group.groupName}=${option.value}`,
+        'Schedule Time': '',
+        'P:UPC': productData.upc || '',
+        'P:EPID': productData.epid || '',
+        'Start price': productData.price || '',
+        'Quantity.1': productData.quantity || '999',
         'Item photo URL': option.image || '',
         'VideoID': '',
         'Condition ID': '',
-        'Description': '',
-        'SHIP': productData.shipping || '',
-        'TOTAL': productData.total || '',
-        'P:EAN': productData.ean || '',
-        'Specifications Warning': '',
-        'Product sellpoints': '',
-        'multiplier': '',
+        'Description.1': '',
+        'Format': '',
+        'Duration': '',
         'Buy It Now price': '',
-        'Ship to': productData.shipTo || 'US',
-        'Store Name': '',
-        'Store no': '',
-        'Open since': '',
-        'Scan date': ''
+        'Best Offer Enabled': '',
+        'Best Offer Auto Accept Price': '',
+        'Minimum Best Offer Price': '',
+        'Immediate pay required': '',
+        'Location': '',
+        'Shipping service 1 option': '',
+        'Shipping service 1 cost': '',
+        'Shipping service 1 priority': '',
+        'Shipping service 2 option': '',
+        'Shipping service 2 cost': '',
+        'Shipping service 2 priority': '',
+        'Max dispatch time': '',
+        'Returns accepted option': '',
+        'Returns within option': '',
+        'Refund option': '',
+        'Return shipping cost paid by': '',
+        'Shipping profile name': '',
+        'Return profile name': '',
+        'Payment profile name': ''
       };
 
       rows.push(variationRow);
@@ -1635,64 +1943,43 @@ function formatDataForCSV(productData) {
   return rows;
 }
 
-// Helper function to convert data to CSV
+// Helper function to convert to CSV
 function convertToCSV(data) {
-  // Define headers based on the data structure
-  const headers = [
-    '#', 'URL', 'Action', 'Custom Label (SKU)', 'Category ID',
-    'Category Name', 'Title', 'Relationship', 'Relationship details',
-    'P:Schedule Time', 'P:UPC', 'P:EPID', 'Price', 'Quantity',
-    'Item photo URL', 'VideoID', 'Condition ID', 'Description',
-    'SHIP', 'TOTAL', 'P:EAN', 'Specifications Warning',
-    'Product sellpoints', 'multiplier', 'Buy It Now price',
-    'Ship to', 'Store Name', 'Store no', 'Open since', 'Scan date'
-  ];
-
-  // Create CSV content
-  let csvContent = headers.join(',') + '\n';
-
-  // Add data rows
-  data.forEach(row => {
-    // Create row content
-    const rowContent = headers.map(header => {
-      // Handle special cases like Description that might contain commas or quotes
-      let value = row[header] || '';
-
-      // Escape quotes and wrap in quotes if the value contains commas, quotes, or newlines
-      if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n'))) {
-        value = '"' + value.replace(/"/g, '""') + '"';
-      }
-
-      return value;
-    }).join(',');
-
-    csvContent += rowContent + '\n';
-  });
-
-  return csvContent;
+  if (!data || !Array.isArray(data) || data.length === 0) return '';
+  
+  try {
+    // Get all column headers
+    const headers = [
+      '#', 'SKU', 'Ebay#', 'Person', 'List date', 'Keyword', 'URL', 'Store Name', 'Store no',
+      'Price', 'Quantity', 'SHIP', 'Ship to', 'TOTAL', 'multiplier', 'Title', 'Description',
+      'Specifications', 'Warning/Disclaimer', 'Product sellpoints', 'Scan Date', 'Action',
+      'SKU', 'Category ID', 'Category Name', 'Title', 'Relationship', 'Relationship details',
+      'Schedule Time', 'P:UPC', 'P:EPID', 'Start price', 'Quantity', 'Item photo URL',
+      'VideoID'
+    ];
+    
+    // Create CSV content
+    let csvContent = headers.join(',') + '\n';
+    
+    // Add data rows
+    data.forEach(row => {
+      const rowContent = headers.map(header => {
+        let value = row[header] !== undefined ? row[header] : '';
+        
+        // Handle special cases like Description that might contain commas or quotes
+        if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n'))) {
+          value = '"' + value.replace(/"/g, '""') + '"';
+        }
+        
+        return value;
+      }).join(',');
+      
+      csvContent += rowContent + '\n';
+    });
+    
+    return csvContent;
+  } catch (error) {
+    console.error("Error converting to CSV:", error);
+    return '';
+  }
 }
-
-// Initialize with improved strategy for detecting product pages
-console.log("AliExpress Scraper content script loaded with dynamic variant scraping");
-
-// Initial check
-if (isProductPage()) {
-  console.log("Product page detected on initial load");
-  waitForProductElements();
-} else {
-  console.log("Not a product page on initial load");
-}
-
-// Continue monitoring for navigation
-setupNavigationObserver();
-
-// Also add an additional window.load event for good measure
-window.addEventListener('load', () => {
-  console.log("Window load event fired");
-  setTimeout(() => {
-    if (isProductPage() && !document.getElementById('aliexpress-scraper-container')) {
-      console.log("Trying after window load event");
-      waitForProductElements();
-    }
-  }, 1000);
-});
