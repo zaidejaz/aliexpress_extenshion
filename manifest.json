@@ -6,19 +6,29 @@
   "permissions": [
     "activeTab",
     "storage",
-    "clipboardWrite"
+    "clipboardWrite",
+    "scripting"
   ],
   "host_permissions": [
     "https://*.aliexpress.com/*",
-    "https://*.aliexpress.us/*"
+    "https://*.aliexpress.us/*",
+    "https://scraper-staticfiles.vercel.app/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["https://*.aliexpress.com/item/*", "https://*.aliexpress.us/item/*"],
-      "js": ["content.js"]
+      "matches": [
+        "https://*.aliexpress.com/item/*", 
+        "https://*.aliexpress.us/item/*",
+        "https://*.aliexpress.com/product/*",
+        "https://*.aliexpress.us/product/*",
+        "https://*.aliexpress.com/i/*",
+        "https://*.aliexpress.us/i/*"
+      ],
+      "js": ["loader.js"],
+      "run_at": "document_end"
     }
   ],
   "action": {

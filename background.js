@@ -8,15 +8,69 @@ let currentStats = {
   processed: 0
 };
 
-// Initialize by loading products from storage
-chrome.storage.local.get(['scrapedProducts', 'stats'], (result) => {
+// Script version tracking
+const SCRIPT_VERSION_KEY = 'contentScriptVersion';
+let contentScriptVersion = '';
+
+// Initialize by loading products and version from storage
+chrome.storage.local.get(['scrapedProducts', 'stats', SCRIPT_VERSION_KEY], (result) => {
   if (result.scrapedProducts) {
     scrapedProducts = result.scrapedProducts;
   }
   if (result.stats) {
     currentStats = result.stats;
   }
+  if (result[SCRIPT_VERSION_KEY]) {
+    contentScriptVersion = result[SCRIPT_VERSION_KEY];
+    console.log("Content script version from storage:", contentScriptVersion);
+  }
 });
+
+// Check for content script updates
+async function checkForScriptUpdates() {
+  try {
+    // Replace with your actual server endpoint that returns the current version
+    const response = await fetch('https://scraper-staticfiles.vercel.app/version.json');
+    if (!response.ok) {
+      throw new Error('Failed to fetch script version');
+    }
+    
+    const data = await response.json();
+    const latestVersion = data.version;
+    
+    console.log("Current version:", contentScriptVersion, "Latest version:", latestVersion);
+    
+    if (latestVersion !== contentScriptVersion) {
+      console.log("New content script version available:", latestVersion);
+      
+      // Update stored version
+      contentScriptVersion = latestVersion;
+      chrome.storage.local.set({ [SCRIPT_VERSION_KEY]: latestVersion });
+      
+      // Notify all active tabs to reload the script
+      chrome.tabs.query({}, (tabs) => {
+        tabs.forEach(tab => {
+          if (tab.url && (tab.url.includes('aliexpress.com') || tab.url.includes('aliexpress.us'))) {
+            chrome.tabs.sendMessage(tab.id, {
+              action: 'updateContentScript',
+              version: latestVersion
+            }).catch(err => {
+              // Tab might not have content script loaded, this is not an error
+              console.log('Could not send update notification to tab', tab.id, err);
+            });
+          }
+        });
+      });
+    }
+  } catch (error) {
+    console.error("Error checking for script updates:", error);
+  }
+}
+
+// Check for updates periodically (every hour)
+setInterval(checkForScriptUpdates, 60 * 60 * 1000);
+// Also check on startup
+checkForScriptUpdates();
 
 // Listen for messages from content scripts or popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -56,6 +110,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       productId: productId 
     });
     return true; // Keep the message channel open for async response
+  }
+  
+  else if (message.action === 'contentScriptLoaded') {
+    console.log("Content script load status:", message.success ? "Success" : "Failed");
+    
+    // You can add logging or other processing here if needed
+    // For example, track successful loads or capture error information
+    
+    // No response needed
+    return false;
   }
   
   else if (message.action === 'getScrapedProducts') {
@@ -114,6 +178,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       products: scrapedProducts 
     });
     return true;
+  }
+  
+  else if (message.action === 'checkForUpdates') {
+    // Manually trigger a check for content script updates
+    checkForScriptUpdates()
+      .then(() => {
+        sendResponse({ success: true, version: contentScriptVersion });
+      })
+      .catch(error => {
+        sendResponse({ success: false, error: error.message });
+      });
+    return true; // Keep the message channel open for the async response
   }
 });
 
