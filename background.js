@@ -1,4 +1,4 @@
-// AliExpress Scraper - Background Script
+// AliExpress Scraper - Background Script with Remote Script Caching
 
 // Local storage for scraped products
 let scrapedProducts = [];
@@ -8,73 +8,126 @@ let currentStats = {
   processed: 0
 };
 
-// Script version tracking
-const SCRIPT_VERSION_KEY = 'contentScriptVersion';
-let contentScriptVersion = '';
+// Script caching configuration
+const SCRIPT_URL = "https://scraper-staticfiles.vercel.app/content.js";
+const SCRIPT_CACHE_KEY = "cachedContentScript";
+const SCRIPT_LAST_FETCH_KEY = "scriptLastFetch";
+const FETCH_INTERVAL = 60 * 60 * 1000; // 1 hour in milliseconds
 
-// Initialize by loading products and version from storage
-chrome.storage.local.get(['scrapedProducts', 'stats', SCRIPT_VERSION_KEY], (result) => {
+// Initialize by loading data from storage
+chrome.storage.local.get(['scrapedProducts', 'stats', SCRIPT_CACHE_KEY, SCRIPT_LAST_FETCH_KEY], (result) => {
   if (result.scrapedProducts) {
     scrapedProducts = result.scrapedProducts;
   }
   if (result.stats) {
     currentStats = result.stats;
   }
-  if (result[SCRIPT_VERSION_KEY]) {
-    contentScriptVersion = result[SCRIPT_VERSION_KEY];
-    console.log("Content script version from storage:", contentScriptVersion);
-  }
+  
+  // Check if we need to fetch a fresh script
+  checkAndFetchScript();
 });
 
-// Check for content script updates
-async function checkForScriptUpdates() {
+// Function to check if script is stale and fetch a new one if needed
+async function checkAndFetchScript() {
   try {
-    // Replace with your actual server endpoint that returns the current version
-    const response = await fetch('https://scraper-staticfiles.vercel.app/version.json');
-    if (!response.ok) {
-      throw new Error('Failed to fetch script version');
-    }
-    
-    const data = await response.json();
-    const latestVersion = data.version;
-    
-    console.log("Current version:", contentScriptVersion, "Latest version:", latestVersion);
-    
-    if (latestVersion !== contentScriptVersion) {
-      console.log("New content script version available:", latestVersion);
+    chrome.storage.local.get([SCRIPT_CACHE_KEY, SCRIPT_LAST_FETCH_KEY], async (result) => {
+      const now = Date.now();
+      const lastFetch = result[SCRIPT_LAST_FETCH_KEY] || 0;
+      const scriptCache = result[SCRIPT_CACHE_KEY];
       
-      // Update stored version
-      contentScriptVersion = latestVersion;
-      chrome.storage.local.set({ [SCRIPT_VERSION_KEY]: latestVersion });
-      
-      // Notify all active tabs to reload the script
-      chrome.tabs.query({}, (tabs) => {
-        tabs.forEach(tab => {
-          if (tab.url && (tab.url.includes('aliexpress.com') || tab.url.includes('aliexpress.us'))) {
-            chrome.tabs.sendMessage(tab.id, {
-              action: 'updateContentScript',
-              version: latestVersion
-            }).catch(err => {
-              // Tab might not have content script loaded, this is not an error
-              console.log('Could not send update notification to tab', tab.id, err);
-            });
+      // If script isn't cached or is stale, fetch a new one
+      if (!scriptCache || (now - lastFetch > FETCH_INTERVAL)) {
+        console.log("Fetching fresh content script from server...");
+        try {
+          const response = await fetch(`${SCRIPT_URL}?t=${now}`);
+          
+          if (!response.ok) {
+            throw new Error(`Server returned ${response.status}`);
           }
-        });
-      });
-    }
+          
+          const script = await response.text();
+          
+          // Cache the script
+          chrome.storage.local.set({
+            [SCRIPT_CACHE_KEY]: script,
+            [SCRIPT_LAST_FETCH_KEY]: now
+          });
+          
+          console.log("Content script updated successfully");
+        } catch (error) {
+          console.error("Error fetching script:", error);
+          
+          // If we don't have a cached script and can't fetch one, show an error
+          if (!scriptCache) {
+            notifyScriptUnavailable();
+          }
+        }
+      } else {
+        console.log("Using cached script, last fetched:", new Date(lastFetch).toLocaleString());
+      }
+    });
   } catch (error) {
-    console.error("Error checking for script updates:", error);
+    console.error("Error checking script status:", error);
   }
 }
 
-// Check for updates periodically (every hour)
-setInterval(checkForScriptUpdates, 60 * 60 * 1000);
-// Also check on startup
-checkForScriptUpdates();
+// Function to notify tabs that the script is unavailable
+function notifyScriptUnavailable() {
+  chrome.tabs.query({
+    url: [
+      "*://*.aliexpress.com/item/*",
+      "*://*.aliexpress.us/item/*",
+      "*://*.aliexpress.com/product/*",
+      "*://*.aliexpress.us/product/*",
+      "*://*.aliexpress.com/i/*",
+      "*://*.aliexpress.us/i/*"
+    ]
+  }, tabs => {
+    tabs.forEach(tab => {
+      chrome.tabs.sendMessage(tab.id, {
+        action: 'scriptUnavailable'
+      }).catch(() => { /* Ignore if content script isn't loaded */ });
+    });
+  });
+}
 
 // Listen for messages from content scripts or popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === 'scrapeProduct') {
+  if (message.action === 'getContentScript') {
+    // Return the cached script if available
+    chrome.storage.local.get([SCRIPT_CACHE_KEY, SCRIPT_LAST_FETCH_KEY], (result) => {
+      if (result[SCRIPT_CACHE_KEY]) {
+        sendResponse({
+          success: true,
+          script: result[SCRIPT_CACHE_KEY],
+          lastFetch: result[SCRIPT_LAST_FETCH_KEY]
+        });
+      } else {
+        sendResponse({
+          success: false,
+          error: "Script not available"
+        });
+      }
+    });
+    return true; // Keep the message channel open for async response
+  }
+  
+  else if (message.action === 'refreshScript') {
+    // Force refresh the script
+    checkAndFetchScript()
+      .then(() => {
+        sendResponse({ success: true });
+      })
+      .catch(error => {
+        sendResponse({ 
+          success: false, 
+          error: error.toString() 
+        });
+      });
+    return true;
+  }
+  
+  else if (message.action === 'scrapeProduct') {
     // Add product to storage
     const productData = message.data;
     
@@ -110,16 +163,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       productId: productId 
     });
     return true; // Keep the message channel open for async response
-  }
-  
-  else if (message.action === 'contentScriptLoaded') {
-    console.log("Content script load status:", message.success ? "Success" : "Failed");
-    
-    // You can add logging or other processing here if needed
-    // For example, track successful loads or capture error information
-    
-    // No response needed
-    return false;
   }
   
   else if (message.action === 'getScrapedProducts') {
@@ -179,18 +222,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     return true;
   }
-  
-  else if (message.action === 'checkForUpdates') {
-    // Manually trigger a check for content script updates
-    checkForScriptUpdates()
-      .then(() => {
-        sendResponse({ success: true, version: contentScriptVersion });
-      })
-      .catch(error => {
-        sendResponse({ success: false, error: error.message });
-      });
-    return true; // Keep the message channel open for the async response
-  }
 });
 
 // Function to save data to storage
@@ -227,3 +258,25 @@ function broadcastStats() {
     });
   });
 }
+
+// Check for script updates on extension startup and periodically
+checkAndFetchScript();
+setInterval(checkAndFetchScript, FETCH_INTERVAL);
+
+// Listen for tab updates to inject the loader
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && tab.url) {
+    // Check if it's an AliExpress product page
+    if ((tab.url.includes('aliexpress.com') || tab.url.includes('aliexpress.us')) &&
+        (tab.url.includes('/item/') || tab.url.includes('/product/') || tab.url.includes('/i/'))) {
+        
+      // Execute the content script loader
+      chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        files: ['loader.js']
+      }).catch(error => {
+        console.error("Error injecting loader:", error);
+      });
+    }
+  }
+});
