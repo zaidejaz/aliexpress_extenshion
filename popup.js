@@ -332,11 +332,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     try {
-      // Combine all product data
+      // Combine all product data with proper row numbering
       let allData = [];
+      let currentRowNumber = 1;
+      
       products.forEach(product => {
         if (product && product.data && Array.isArray(product.data)) {
-          allData = allData.concat(product.data);
+          // Update row numbers for each product's data
+          const updatedProductData = product.data.map(row => {
+            const newRow = { ...row };
+            newRow['#'] = currentRowNumber++;
+            return newRow;
+          });
+          allData = allData.concat(updatedProductData);
         }
       });
       
@@ -383,44 +391,53 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!data || !Array.isArray(data) || data.length === 0) return '';
     
     try {
-      // Get all possible headers
-      const headers = new Set();
-      data.forEach(item => {
-        if (item && typeof item === 'object') {
-          Object.keys(item).forEach(key => {
-            headers.add(key);
-          });
+      console.log("Starting CSV conversion with data:", JSON.stringify(data, null, 2));
+      
+      // Define the exact order of headers
+      const headers = [
+        '#', 'SKU', 'URL', 'Store Name', 'Store no', 'Price', 'Quantity', 'SHIP', 'Ship to', 'TOTAL', 'multiplier',
+        'Title', 'Description', 'Specifications', 'Warning/Disclaimer', 'Product sellpoints', 'Scan Date',
+        'Action', 'Category ID', 'Category Name', 'Relationship', 'Relationship details', 'Schedule Time',
+        'P:UPC', 'P:EPID', 'Start Price', 'Item photo URL', 'VideoID'
+      ];
+      
+      // Create CSV content with headers
+      let csvContent = headers.map(header => {
+        // Escape headers that contain commas or quotes
+        if (header.includes(',') || header.includes('"')) {
+          return `"${header.replace(/"/g, '""')}"`;
         }
-      });
+        return header;
+      }).join(',') + '\n';
       
-      const headerArray = Array.from(headers);
-      if (headerArray.length === 0) return '';
-      
-      // Create CSV content
-      let csvContent = headerArray.join(',') + '\n';
+      console.log("CSV headers:", csvContent);
       
       // Add data rows
       data.forEach(row => {
-        if (!row || typeof row !== 'object') return;
-        
-        const rowContent = headerArray.map(header => {
-          let value = row[header] || '';
+        const rowContent = headers.map(header => {
+          let value = row[header] !== undefined ? row[header] : '';
           
-          // Escape quotes and wrap in quotes if the value contains commas, quotes, or newlines
-          if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n'))) {
-            value = '"' + value.replace(/"/g, '""') + '"';
+          // Convert value to string if it's not already
+          value = String(value);
+          
+          // Handle special cases that need escaping
+          if (value.includes(',') || value.includes('"') || value.includes('\n') || value.includes('\r')) {
+            // Escape quotes by doubling them and wrap in quotes
+            value = `"${value.replace(/"/g, '""')}"`;
           }
           
           return value;
         }).join(',');
         
         csvContent += rowContent + '\n';
+        console.log(`Row ${row['#']} CSV content:`, rowContent);
       });
       
+      console.log("Final CSV content:", csvContent);
       return csvContent;
     } catch (error) {
       console.error("Error converting to CSV:", error);
-      throw error;
+      return '';
     }
   }
   

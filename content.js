@@ -683,13 +683,13 @@ function extractWarningsAndDisclaimers() {
   try {
     // Target only the exact element with the specific class
     const warningElement = document.querySelector('.remind--msg--bmjMqyw');
-    
+
     if (warningElement) {
       const warningText = warningElement.textContent.trim();
       console.log("Found warning element with class 'remind--msg--bmjMqyw':", warningText);
       return warningText;
     }
-    
+
     // If not found, return empty string
     return '';
   } catch (error) {
@@ -1032,18 +1032,26 @@ function scrapeProductData() {
   }
 
   // Extract description
-  const descriptionElements = [
-    document.querySelector('.detail--richtext--1CEb0'),
-    document.querySelector('.product-description'),
-    document.querySelector('.detail-desc-decorate-richtext'),
-    document.querySelector('[data-pl="product-description"]'),
-    document.querySelector('.product-description-container'),
-    document.querySelector('.description--origin-part--rWy05pE')
-  ].filter(Boolean);
-
-  if (descriptionElements.length > 0) {
-    data.description = descriptionElements[0].textContent.trim();
+  const descriptionElement = document.querySelector('#product-description');
+  
+  if (descriptionElement) {
+    // Remove any <script> tags from the description
+    const scriptTags = descriptionElement.getElementsByTagName('script');
+    while (scriptTags.length > 0) {
+      scriptTags[0].parentNode.removeChild(scriptTags[0]);
+    }
+    
+    // Now get the cleaned text content
+    let descriptionText = descriptionElement.textContent.trim();
+    
+    if (descriptionText) {
+      data.description = descriptionText;
+      console.log("Extracted description:", descriptionText);
+    }
+  } else {
+      console.warn("Description element not found with any selector.");
   }
+
 
   // Extract store information
   const storeInfo = extractStoreInfo();
@@ -1261,6 +1269,34 @@ function extractShippingCost() {
   let shippingCost = '0'; // Default to free shipping
 
   try {
+    // First check if there's text about free shipping over $10
+    const freeShippingOver10Text = document.body.textContent.match(/Free shipping over \$10.00/i);
+    if (freeShippingOver10Text) {
+      console.log("Found 'Free shipping over $10.00' text");
+      return '1.99'; // Default shipping cost for this case
+    }
+
+    // Get the current price
+    const priceElement = document.querySelector('.price--currentPriceText--V8_y_b5') ||
+      document.querySelector('.product-price-value') ||
+      document.querySelector('.uniform-banner-box-price') ||
+      document.querySelector('[data-pl="product-price"]');
+
+    let currentPrice = 0;
+    if (priceElement) {
+      const priceText = priceElement.textContent.trim();
+      const match = priceText.match(/[\d,.]+/);
+      if (match) {
+        currentPrice = parseFloat(match[0].replace(/,/g, ''));
+      }
+    }
+
+    // If price is over $10, shipping should be $9
+    if (currentPrice > 10) {
+      console.log("Price over $10, setting shipping to $9");
+      return '9.00';
+    }
+
     // Direct approach for the dynamic shipping structure
     const dynamicShippingLines = document.querySelectorAll('.dynamic-shipping-line');
     for (const line of dynamicShippingLines) {
@@ -1608,18 +1644,17 @@ function generateAllCombinations(variationGroups) {
 }
 
 // Updated function to format data for CSV based on the provided template
-function formatDataForCSV(productData) {
+function formatDataForCSV(productData, startRowNumber = 1) {
+  console.log("Starting formatDataForCSV with data:", JSON.stringify(productData, null, 2));
   const rows = [];
+  let currentRowNumber = startRowNumber;
 
   // If there are no variations, just create a single row
   if (!productData.variations || productData.variations.length === 0) {
+    console.log("No variations found, creating single row");
     const row = {
-      '#': 1,
+      '#': currentRowNumber,
       'SKU': productData.customLabel || '',
-      'Ebay#': '',
-      'Person': '',
-      'List date': '',
-      'Keyword': '',
       'URL': productData.url || '',
       'Store Name': productData.storeName || '',
       'Store no': productData.storeNo || '',
@@ -1636,45 +1671,19 @@ function formatDataForCSV(productData) {
       'Product sellpoints': productData.productSellpoints || '',
       'Scan Date': productData.scanDate || '',
       'Action': 'Add',
-      'SKU': productData.customLabel || '',
       'Category ID': productData.categoryId || '',
       'Category Name': productData.categoryName || '',
-      'Title': '',
       'Relationship': '',
       'Relationship details': '',
       'Schedule Time': '',
       'P:UPC': productData.upc || '',
       'P:EPID': productData.epid || '',
-      'Start price': '',
-      'Quantity': '',
+      'Start Price': '',
       'Item photo URL': productData.photos || '',
-      'VideoID': productData.videoUrls || '',
-      'Condition ID': '',
-      'Description': productData.description || '',
-      'Format': '',
-      'Duration': '',
-      'Buy It Now price': '',
-      'Best Offer Enabled': '',
-      'Best Offer Auto Accept Price': '',
-      'Minimum Best Offer Price': '',
-      'Immediate pay required': '',
-      'Location': '',
-      'Shipping service 1 option': '',
-      'Shipping service 1 cost': '',
-      'Shipping service 1 priority': '',
-      'Shipping service 2 option': '',
-      'Shipping service 2 cost': '',
-      'Shipping service 2 priority': '',
-      'Max dispatch time': '',
-      'Returns accepted option': '',
-      'Returns within option': '',
-      'Refund option': '',
-      'Return shipping cost paid by': '',
-      'Shipping profile name': '',
-      'Return profile name': '',
-      'Payment profile name': ''
+      'VideoID': productData.videoUrls || ''
     };
 
+    console.log("Created single row:", JSON.stringify(row, null, 2));
     rows.push(row);
     return rows;
   }
@@ -1698,21 +1707,19 @@ function formatDataForCSV(productData) {
     }
   });
 
+  console.log("Created relationship details:", relationshipDetails);
+
   // Parent row (first row)
   const parentRow = {
-    '#': 1,
+    '#': currentRowNumber++,
     'SKU': productData.customLabel || '',
-    'Ebay#': '',
-    'Person': '',
-    'List date': '',
-    'Keyword': '',
     'URL': productData.url || '',
     'Store Name': productData.storeName || '',
     'Store no': productData.storeNo || '',
-    'Price': productData.price || '',
-    'Quantity': productData.quantity || '999',
-    'SHIP': productData.shipping || '',
-    'Ship to': productData.shipTo || 'US',
+    'Price': '',
+    'Quantity': '',
+    'SHIP': '',
+    'Ship to': '',
     'TOTAL': productData.total || '',
     'multiplier': '',
     'Title': productData.title || '',
@@ -1722,61 +1729,33 @@ function formatDataForCSV(productData) {
     'Product sellpoints': productData.productSellpoints || '',
     'Scan Date': productData.scanDate || '',
     'Action': 'Add',
-    'SKU': productData.customLabel || '',
     'Category ID': productData.categoryId || '',
     'Category Name': productData.categoryName || '',
-    'Title': '',
     'Relationship': '',
     'Relationship details': relationshipDetails,
     'Schedule Time': '',
     'P:UPC': productData.upc || '',
     'P:EPID': productData.epid || '',
-    'Start price': '',
-    'Quantity': '',
+    'Start Price': '',
     'Item photo URL': productData.photos || '',
-    'VideoID': productData.videoUrls || '',
-    'Condition ID': '',
-    'Description': productData.description || '',
-    'Format': '',
-    'Duration': '',
-    'Buy It Now price': '',
-    'Best Offer Enabled': '',
-    'Best Offer Auto Accept Price': '',
-    'Minimum Best Offer Price': '',
-    'Immediate pay required': '',
-    'Location': '',
-    'Shipping service 1 option': '',
-    'Shipping service 1 cost': '',
-    'Shipping service 1 priority': '',
-    'Shipping service 2 option': '',
-    'Shipping service 2 cost': '',
-    'Shipping service 2 priority': '',
-    'Max dispatch time': '',
-    'Returns accepted option': '',
-    'Returns within option': '',
-    'Refund option': '',
-    'Return shipping cost paid by': '',
-    'Shipping profile name': '',
-    'Return profile name': '',
-    'Payment profile name': ''
+    'VideoID': productData.videoUrls || ''
   };
 
+  console.log("Created parent row:", JSON.stringify(parentRow, null, 2));
   rows.push(parentRow);
 
   // Generate all possible combinations of variations
-  let rowIndex = 2; // Start from 2 for variations
-
-  // If we have multiple variation groups (e.g., Color AND Size)
-  if (productData.variations.length > 1) {
+  if (productData.variations && productData.variations.length > 0) {
     // Create all combinations
     const allCombinations = generateAllCombinations(productData.variations);
+    console.log("Generated combinations:", allCombinations.length);
 
     // For each combination, create a variation row
     allCombinations.forEach(combination => {
       // Build the relationship details string (e.g., "Color=Red|Size=Small")
       let variantDetails = '';
       let skuSuffix = '';
-      let colorImage = ''; // To store color-specific image if available
+      let variantPhotos = [];
 
       combination.forEach((option, i) => {
         // Add to relationship details
@@ -1789,26 +1768,16 @@ function formatDataForCSV(productData) {
         const safeValue = option.value.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9-]/g, '');
         skuSuffix += (i > 0 ? '-' : '') + safeValue;
 
-        // If this is a color variation and has an image, save it
-        if (productData.variations[i].groupName.toLowerCase().includes('color') && option.image) {
-          colorImage = option.image;
+        // If this variation has an image, add it with the variation type
+        if (option.image) {
+          variantPhotos.push(`${productData.variations[i].groupName}=${option.image}`);
         }
       });
 
-      // Use color image if available, otherwise use the first parent image
-      let itemPhotoURL = colorImage;
-      if (!itemPhotoURL && productData.imageData && productData.imageData.parentImages && productData.imageData.parentImages.length > 0) {
-        itemPhotoURL = productData.imageData.parentImages[0];
-      }
-
       // Create the variation row
       const variationRow = {
-        '#': rowIndex++,
+        '#': currentRowNumber++,
         'SKU': `${productData.customLabel}-${skuSuffix}`,
-        'Ebay#': '',
-        'Person': '',
-        'List date': '',
-        'Keyword': '',
         'URL': '',
         'Store Name': '',
         'Store no': '',
@@ -1818,69 +1787,40 @@ function formatDataForCSV(productData) {
         'Ship to': productData.shipTo || 'US',
         'TOTAL': productData.total || '',
         'multiplier': '',
-        'Title': '',
+        'Title': productData.title || '',
         'Description': '',
         'Specifications': '',
         'Warning/Disclaimer': '',
         'Product sellpoints': '',
         'Scan Date': '',
         'Action': '',
-        'SKU': `${productData.customLabel}-${skuSuffix}`,
         'Category ID': '',
         'Category Name': '',
-        'Title': '',
         'Relationship': 'Variation',
         'Relationship details': variantDetails,
         'Schedule Time': '',
         'P:UPC': productData.upc || '',
         'P:EPID': productData.epid || '',
-        'Start price': '',
-        'Quantity': '',
-        'Item photo URL': itemPhotoURL || '',
-        'VideoID': '',
-        'Condition ID': '',
-        'Description': '',
-        'Format': '',
-        'Duration': '',
-        'Buy It Now price': '',
-        'Best Offer Enabled': '',
-        'Best Offer Auto Accept Price': '',
-        'Minimum Best Offer Price': '',
-        'Immediate pay required': '',
-        'Location': '',
-        'Shipping service 1 option': '',
-        'Shipping service 1 cost': '',
-        'Shipping service 1 priority': '',
-        'Shipping service 2 option': '',
-        'Shipping service 2 cost': '',
-        'Shipping service 2 priority': '',
-        'Max dispatch time': '',
-        'Returns accepted option': '',
-        'Returns within option': '',
-        'Refund option': '',
-        'Return shipping cost paid by': '',
-        'Shipping profile name': '',
-        'Return profile name': '',
-        'Payment profile name': ''
+        'Start Price': '',
+        'Item photo URL': variantPhotos.join('|'),
+        'VideoID': ''
       };
 
+      console.log(`Created variation row ${currentRowNumber - 1}:`, JSON.stringify(variationRow, null, 2));
       rows.push(variationRow);
     });
   }
   // If we only have one variation group (e.g., just Color)
   else if (productData.variations.length === 1) {
     const group = productData.variations[0];
+    console.log("Processing single variation group:", group.groupName);
 
     group.options.forEach(option => {
       const safeValue = option.value.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9-]/g, '');
 
       const variationRow = {
-        '#': rowIndex++,
+        '#': currentRowNumber++,
         'SKU': `${productData.customLabel}-${safeValue}`,
-        'Ebay#': '',
-        'Person': '',
-        'List date': '',
-        'Keyword': '',
         'URL': '',
         'Store Name': '',
         'Store no': '',
@@ -1890,96 +1830,132 @@ function formatDataForCSV(productData) {
         'Ship to': productData.shipTo || 'US',
         'TOTAL': productData.total || '',
         'multiplier': '',
-        'Title': '',
+        'Title': productData.title || '',
         'Description': '',
         'Specifications': '',
         'Warning/Disclaimer': '',
         'Product sellpoints': '',
         'Scan Date': '',
         'Action': '',
-        'SKU': `${productData.customLabel}-${safeValue}`,
         'Category ID': '',
         'Category Name': '',
-        'Title': '',
         'Relationship': 'Variation',
         'Relationship details': `${group.groupName}=${option.value}`,
         'Schedule Time': '',
         'P:UPC': productData.upc || '',
         'P:EPID': productData.epid || '',
-        'Start price': '',
-        'Quantity': '',
-        'Item photo URL': option.image || '',
-        'VideoID': '',
-        'Condition ID': '',
-        'Description': '',
-        'Format': '',
-        'Duration': '',
-        'Buy It Now price': '',
-        'Best Offer Enabled': '',
-        'Best Offer Auto Accept Price': '',
-        'Minimum Best Offer Price': '',
-        'Immediate pay required': '',
-        'Location': '',
-        'Shipping service 1 option': '',
-        'Shipping service 1 cost': '',
-        'Shipping service 1 priority': '',
-        'Shipping service 2 option': '',
-        'Shipping service 2 cost': '',
-        'Shipping service 2 priority': '',
-        'Max dispatch time': '',
-        'Returns accepted option': '',
-        'Returns within option': '',
-        'Refund option': '',
-        'Return shipping cost paid by': '',
-        'Shipping profile name': '',
-        'Return profile name': '',
-        'Payment profile name': ''
+        'Start Price': '',
+        'Item photo URL': option.image ? `${group.groupName}=${option.image}` : '',
+        'VideoID': ''
       };
 
+      console.log(`Created single variation row ${currentRowNumber - 1}:`, JSON.stringify(variationRow, null, 2));
       rows.push(variationRow);
     });
   }
 
+  console.log("Final rows array:", JSON.stringify(rows, null, 2));
   return rows;
 }
 
 // Helper function to convert to CSV
 function convertToCSV(data) {
   if (!data || !Array.isArray(data) || data.length === 0) return '';
-  
+
   try {
-    // Get all column headers
+    console.log("Starting CSV conversion with data:", JSON.stringify(data, null, 2));
+
+    // Define the exact order of headers without duplicates
     const headers = [
-      '#', 'SKU', 'Ebay#', 'Person', 'List date', 'Keyword', 'URL', 'Store Name', 'Store no',
-      'Price', 'Quantity', 'SHIP', 'Ship to', 'TOTAL', 'multiplier', 'Title', 'Description',
-      'Specifications', 'Warning/Disclaimer', 'Product sellpoints', 'Scan Date', 'Action',
-      'SKU', 'Category ID', 'Category Name', 'Title', 'Relationship', 'Relationship details',
-      'Schedule Time', 'P:UPC', 'P:EPID', 'Start price', 'Quantity', 'Item photo URL',
-      'VideoID'
+      '#', 'SKU', 'URL', 'Store Name', 'Store no', 'Price', 'Quantity', 'SHIP', 'Ship to', 'TOTAL', 'multiplier',
+      'Title', 'Description', 'Specifications', 'Warning/Disclaimer', 'Product sellpoints', 'Scan Date',
+      'Action', 'Category ID', 'Category Name', 'Relationship', 'Relationship details', 'Schedule Time',
+      'P:UPC', 'P:EPID', 'Start Price', 'Item photo URL', 'VideoID'
     ];
-    
-    // Create CSV content
-    let csvContent = headers.join(',') + '\n';
-    
-    // Add data rows
-    data.forEach(row => {
+
+    // Create CSV content with headers
+    let csvContent = headers.map(header => {
+      // Escape headers that contain commas or quotes
+      if (header.includes(',') || header.includes('"')) {
+        return `"${header.replace(/"/g, '""')}"`;
+      }
+      return header;
+    }).join(',') + '\n';
+
+    console.log("CSV headers:", csvContent);
+
+    // Add data rows with row numbers
+    data.forEach((row, index) => {
       const rowContent = headers.map(header => {
         let value = row[header] !== undefined ? row[header] : '';
-        
-        // Handle special cases like Description that might contain commas or quotes
-        if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n'))) {
-          value = '"' + value.replace(/"/g, '""') + '"';
+
+        // Convert value to string if it's not already
+        value = String(value);
+
+        // Handle special cases that need escaping
+        if (value.includes(',') || value.includes('"') || value.includes('\n') || value.includes('\r')) {
+          // Escape quotes by doubling them and wrap in quotes
+          value = `"${value.replace(/"/g, '""')}"`;
         }
-        
+
         return value;
       }).join(',');
-      
+
       csvContent += rowContent + '\n';
+      console.log(`Row ${index + 1} CSV content:`, rowContent);
     });
-    
+
+    console.log("Final CSV content:", csvContent);
     return csvContent;
   } catch (error) {
     console.error("Error converting to CSV:", error);
     return '';
   }
 }
+
+// Function to check if extension has expired (3 days from installation)
+function checkExpiration() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['installationDate'], (result) => {
+      if (!result.installationDate) {
+        // First time running - set installation date
+        const installationDate = new Date().getTime();
+        chrome.storage.local.set({ installationDate }, () => {
+          resolve(false); // Not expired
+        });
+        return;
+      }
+
+      const now = new Date().getTime();
+      const threeDaysInMs = 3 * 24 * 60 * 60 * 1000; // 3 days in milliseconds
+      const isExpired = (now - result.installationDate) > threeDaysInMs;
+
+      if (isExpired) {
+        // Clear all stored data
+        chrome.storage.local.clear();
+      }
+
+      resolve(isExpired);
+    });
+  });
+}
+
+// Initial setup when content script loads
+checkExpiration().then(isExpired => {
+  if (isExpired) {
+    console.log("Extension has expired");
+    return;
+  }
+
+  if (isProductPage()) {
+    console.log("Initial page load - checking for product elements");
+    waitForProductElements();
+  }
+});
+
+// Setup navigation observer for dynamic page changes
+checkExpiration().then(isExpired => {
+  if (!isExpired) {
+    setupNavigationObserver();
+  }
+});
