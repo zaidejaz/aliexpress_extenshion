@@ -1,4 +1,4 @@
-// AliExpress Scraper - Background Script with Remote Script Caching
+// AliExpress Scraper - Background Script
 
 // Local storage for scraped products
 let scrapedProducts = [];
@@ -8,143 +8,83 @@ let currentStats = {
   processed: 0
 };
 
-// Script caching configuration
-const SCRIPT_URL = "https://scraper-staticfiles.vercel.app/content.js";
-const SCRIPT_CACHE_KEY = "cachedContentScript";
-const SCRIPT_LAST_FETCH_KEY = "scriptLastFetch";
-const FETCH_INTERVAL = 60 * 60 * 1000; // 1 hour in milliseconds
-
-// Initialize by loading data from storage
-chrome.storage.local.get(['scrapedProducts', 'stats', SCRIPT_CACHE_KEY, SCRIPT_LAST_FETCH_KEY], (result) => {
+// Initialize by loading products from storage
+chrome.storage.local.get(['scrapedProducts', 'stats'], (result) => {
   if (result.scrapedProducts) {
     scrapedProducts = result.scrapedProducts;
   }
   if (result.stats) {
     currentStats = result.stats;
   }
-  
-  // Check if we need to fetch a fresh script
-  checkAndFetchScript();
 });
 
-// Function to check if script is stale and fetch a new one if needed
-async function checkAndFetchScript() {
-  try {
-    chrome.storage.local.get([SCRIPT_CACHE_KEY, SCRIPT_LAST_FETCH_KEY], async (result) => {
-      const now = Date.now();
-      const lastFetch = result[SCRIPT_LAST_FETCH_KEY] || 0;
-      const scriptCache = result[SCRIPT_CACHE_KEY];
-      
-      // If script isn't cached or is stale, fetch a new one
-      if (!scriptCache || (now - lastFetch > FETCH_INTERVAL)) {
-        console.log("Fetching fresh content script from server...");
-        try {
-          const response = await fetch(`${SCRIPT_URL}?t=${now}`);
-          
-          if (!response.ok) {
-            throw new Error(`Server returned ${response.status}`);
-          }
-          
-          const script = await response.text();
-          
-          // Cache the script
-          chrome.storage.local.set({
-            [SCRIPT_CACHE_KEY]: script,
-            [SCRIPT_LAST_FETCH_KEY]: now
-          });
-          
-          console.log("Content script updated successfully");
-        } catch (error) {
-          console.error("Error fetching script:", error);
-          
-          // If we don't have a cached script and can't fetch one, show an error
-          if (!scriptCache) {
-            notifyScriptUnavailable();
-          }
-        }
-      } else {
-        console.log("Using cached script, last fetched:", new Date(lastFetch).toLocaleString());
+// Function to check if extension has expired (3 days from installation)
+function checkExpiration() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['installationDate'], (result) => {
+      if (!result.installationDate) {
+        // First time running - set installation date
+        const installationDate = new Date().getTime();
+        chrome.storage.local.set({ installationDate }, () => {
+          resolve(false); // Not expired
+        });
+        return;
       }
-    });
-  } catch (error) {
-    console.error("Error checking script status:", error);
-  }
-}
 
-// Function to notify tabs that the script is unavailable
-function notifyScriptUnavailable() {
-  chrome.tabs.query({
-    url: [
-      "*://*.aliexpress.com/item/*",
-      "*://*.aliexpress.us/item/*",
-      "*://*.aliexpress.com/product/*",
-      "*://*.aliexpress.us/product/*",
-      "*://*.aliexpress.com/i/*",
-      "*://*.aliexpress.us/i/*"
-    ]
-  }, tabs => {
-    tabs.forEach(tab => {
-      chrome.tabs.sendMessage(tab.id, {
-        action: 'scriptUnavailable'
-      }).catch(() => { /* Ignore if content script isn't loaded */ });
+      const now = new Date().getTime();
+      const threeDaysInMs = 3 * 24 * 60 * 60 * 1000; // 3 days in milliseconds
+      const isExpired = (now - result.installationDate) > threeDaysInMs;
+
+      if (isExpired) {
+        // Clear all stored data
+        chrome.storage.local.clear();
+        // Silently disable the extension
+        chrome.management.setEnabled(chrome.runtime.id, false);
+      }
+
+      resolve(isExpired);
     });
   });
 }
 
+// Check expiration on startup
+checkExpiration().then(isExpired => {
+  if (isExpired) {
+    // Silently disable the extension
+    chrome.management.setEnabled(chrome.runtime.id, false);
+  }
+});
+
 // Listen for messages from content scripts or popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === 'getContentScript') {
-    // Return the cached script if available
-    chrome.storage.local.get([SCRIPT_CACHE_KEY, SCRIPT_LAST_FETCH_KEY], (result) => {
-      if (result[SCRIPT_CACHE_KEY]) {
-        sendResponse({
-          success: true,
-          script: result[SCRIPT_CACHE_KEY],
-          lastFetch: result[SCRIPT_LAST_FETCH_KEY]
-        });
-      } else {
-        sendResponse({
-          success: false,
-          error: "Script not available"
-        });
-      }
-    });
-    return true; // Keep the message channel open for async response
-  }
-  
-  else if (message.action === 'refreshScript') {
-    // Force refresh the script
-    checkAndFetchScript()
-      .then(() => {
-        sendResponse({ success: true });
-      })
-      .catch(error => {
-        sendResponse({ 
-          success: false, 
-          error: error.toString() 
-        });
-      });
-    return true;
-  }
-  
-  else if (message.action === 'scrapeProduct') {
-    // Add product to storage
-    const productData = message.data;
+  if (message.action === 'scrapeProduct') {
+    // Check if product with this URL already exists
+    const existingProductIndex = scrapedProducts.findIndex(p => p.url === message.url);
     
-    // Add timestamp and ID
-    const productId = Date.now().toString();
-    const timestamp = new Date().toISOString();
-    
-    // Store product with metadata
-    const storedProduct = {
-      id: productId,
-      timestamp: timestamp,
-      url: message.url,
-      data: productData
-    };
-    
-    // Add to local storage array
-    scrapedProducts.push(storedProduct);
+    if (existingProductIndex !== -1) {
+      // Update existing product instead of adding new one
+      scrapedProducts[existingProductIndex] = {
+        id: scrapedProducts[existingProductIndex].id,
+        timestamp: new Date().toISOString(),
+        url: message.url,
+        data: message.data
+      };
+    } else {
+      // Add new product
+      const productId = Date.now().toString();
+      const timestamp = new Date().toISOString();
+      
+      // Store product with metadata
+      const storedProduct = {
+        id: productId,
+        timestamp: timestamp,
+        url: message.url,
+        data: message.data
+      };
+      
+      // Add to local storage array
+      scrapedProducts.push(storedProduct);
+    }
     
     // Update stats
     currentStats.total = scrapedProducts.length;
@@ -160,7 +100,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ 
       success: true, 
       message: 'Product saved successfully',
-      productId: productId 
+      productId: existingProductIndex !== -1 ? scrapedProducts[existingProductIndex].id : Date.now().toString()
     });
     return true; // Keep the message channel open for async response
   }
@@ -215,12 +155,39 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   
   else if (message.action === 'downloadAllProducts') {
-    // Send all products data for downloading
+    // Remove duplicate products based on URL
+    const uniqueProducts = scrapedProducts.filter((product, index, self) =>
+      index === self.findIndex((p) => p.url === product.url)
+    );
+
+    // Format all products with continuous row numbering
+    let allRows = [];
+    let currentRowNumber = 1;
+
+    uniqueProducts.forEach(product => {
+      const productRows = formatDataForCSV(product.data);
+      allRows = allRows.concat(productRows);
+    });
+
+    // Add row numbers to all rows
+    allRows = allRows.map((row, index) => ({
+      ...row,
+      '#': index + 1
+    }));
+
+    // Send formatted data for downloading
     sendResponse({ 
       success: true, 
-      products: scrapedProducts 
+      products: allRows 
     });
     return true;
+  }
+  
+  else if (message.action === "checkExpiration") {
+    checkExpiration().then(isExpired => {
+      sendResponse({ isExpired });
+    });
+    return true; // Will respond asynchronously
   }
 });
 
@@ -258,25 +225,3 @@ function broadcastStats() {
     });
   });
 }
-
-// Check for script updates on extension startup and periodically
-checkAndFetchScript();
-setInterval(checkAndFetchScript, FETCH_INTERVAL);
-
-// Listen for tab updates to inject the loader
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' && tab.url) {
-    // Check if it's an AliExpress product page
-    if ((tab.url.includes('aliexpress.com') || tab.url.includes('aliexpress.us')) &&
-        (tab.url.includes('/item/') || tab.url.includes('/product/') || tab.url.includes('/i/'))) {
-        
-      // Execute the content script loader
-      chrome.scripting.executeScript({
-        target: { tabId: tabId },
-        files: ['loader.js']
-      }).catch(error => {
-        console.error("Error injecting loader:", error);
-      });
-    }
-  }
-});

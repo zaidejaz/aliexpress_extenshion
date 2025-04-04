@@ -6,29 +6,19 @@
   "permissions": [
     "activeTab",
     "storage",
-    "clipboardWrite",
-    "scripting"
+    "clipboardWrite"
   ],
   "host_permissions": [
     "https://*.aliexpress.com/*",
-    "https://*.aliexpress.us/*",
-    "https://scraper-staticfiles.vercel.app/*"
+    "https://*.aliexpress.us/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": [
-        "https://*.aliexpress.com/item/*", 
-        "https://*.aliexpress.us/item/*",
-        "https://*.aliexpress.com/product/*",
-        "https://*.aliexpress.us/product/*",
-        "https://*.aliexpress.com/i/*",
-        "https://*.aliexpress.us/i/*"
-      ],
-      "js": ["loader.js"],
-      "run_at": "document_end"
+      "matches": ["https://*.aliexpress.com/item/*", "https://*.aliexpress.us/item/*"],
+      "js": ["content.js"]
     }
   ],
   "action": {
@@ -45,11 +35,5 @@
     "32": "icons/icon32.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
-  },
-  "web_accessible_resources": [
-    {
-      "resources": ["content-cached.js"],
-      "matches": ["https://*.aliexpress.com/*", "https://*.aliexpress.us/*"]
-    }
-  ]
+  }
 }
